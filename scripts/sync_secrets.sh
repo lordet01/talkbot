@@ -14,11 +14,7 @@ fi
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 
-if [[ -z "${WIFI_SSID:-}" || -z "${WIFI_PASSWORD:-}" ]]; then
-  echo "ERROR: Set WIFI_SSID and WIFI_PASSWORD in .env"
-  exit 1
-fi
-
+# WIFI_* optional: empty → device uses SoftAP portal (Talkbot-Setup)
 KEY="${GROQ_API:-${GROQ_API_KEY:-}}"
 if [[ -z "$KEY" ]]; then
   echo "ERROR: Set GROQ_API in .env"
@@ -29,8 +25,8 @@ escape() {
   python3 -c 'import sys; print(sys.argv[1].replace("\\", "\\\\").replace("\"", "\\\""))' "$1"
 }
 
-SSID_ESC=$(escape "$WIFI_SSID")
-PASS_ESC=$(escape "$WIFI_PASSWORD")
+SSID_ESC=$(escape "${WIFI_SSID:-}")
+PASS_ESC=$(escape "${WIFI_PASSWORD:-}")
 KEY_ESC=$(escape "$KEY")
 
 GOOGLE_KEY="${GOOGLE_API:-}"
@@ -47,3 +43,6 @@ cat > "$OUT" <<EOF
 EOF
 
 echo "Wrote $OUT"
+if [[ -z "${WIFI_SSID:-}" ]]; then
+  echo "Note: WIFI_SSID empty — use SoftAP Talkbot-Setup / http://192.168.4.1"
+fi
