@@ -1,0 +1,10 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+output/*.wav
+.DS_Store
+arduino/05_groq_voice_chat/secrets.h
+
+# Large firmware binaries (download via scripts/flash_respeaker_i2s.sh)
+firmware/*.bin
