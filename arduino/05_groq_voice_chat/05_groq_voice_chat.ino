@@ -60,41 +60,45 @@ static const size_t SAMPLE_RATE = 16000;
 static const size_t MAX_RECORD_SEC = 8;
 static const size_t MAX_SAMPLES = SAMPLE_RATE * MAX_RECORD_SEC;
 
-// Adaptive energy VAD (absolute floors + SNR vs estimated noise)
-// Tuned strict: ambient/hiss often lands ~0.03 RMS and becomes Whisper hallucinations.
-static const float VAD_ABS_MIN = 0.024f;           // never trigger below this
-static const float VAD_ONSET_SNR = 3.4f;           // window RMS / noise floor to start
-static const float VAD_END_SNR = 1.7f;             // below this → silence for end
-static const float SPEECH_MIN_SNR = 2.8f;          // whole-buffer avg vs noise
-static const float SPEECH_PEAK_SNR = 4.2f;         // peak windows vs noise
-static const float SPEECH_ABS_MIN = 0.030f;        // absolute avg floor
-static const float SPEECH_PEAK_ABS = 0.048f;       // absolute peak floor
-static const float SPEECH_MOD_MIN = 0.28f;         // CV of frame RMS (speech modulates)
-static const float ZCR_SPEECH_MIN = 0.04f;         // too low → hum/tone/rumble
-static const float ZCR_SPEECH_MAX = 0.30f;         // too high → hiss/white noise
+// Adaptive energy VAD — balance: reject keyboard/ambient (~0.03 RMS) vs accept normal speech (~0.06+ peak).
+static const float VAD_ABS_MIN = 0.028f;
+static const float VAD_ONSET_SNR = 3.8f;
+static const float VAD_ONSET_ABS_MIN = 0.050f;   // block sub-speech ambient; allow ~0.064+ onset
+static const float VAD_ONSET_ABS_MAX = 0.090f;   // cap when noise floor is high
+static const float VAD_END_SNR = 1.8f;
+static const float SPEECH_MIN_SNR = 3.0f;
+static const float SPEECH_PEAK_SNR = 4.5f;
+static const float SPEECH_ABS_MIN = 0.028f;
+static const float SPEECH_PEAK_ABS = 0.050f;
+static const float SPEECH_PEAK_ABS_MAX = 0.110f;
+static const float SPEECH_MOD_MIN = 0.26f;
+static const float ZCR_SPEECH_MIN = 0.04f;
+static const float ZCR_SPEECH_MAX = 0.29f;
 static const float NOISE_FLOOR_MIN = 0.0035f;
-static const float NOISE_FLOOR_MAX = 0.035f;
+static const float NOISE_FLOOR_MAX = 0.038f;
 static const float NOISE_EMA_FAST = 0.12f;
 static const float NOISE_EMA_SLOW = 0.03f;
-// Endpointing: balance latency vs cut-off (too short → weak clips / STT misses)
 static const uint32_t SILENCE_MS_SHORT = 300;
-static const uint32_t SILENCE_MS_LONG = 360;
-static const uint32_t SILENCE_ADAPT_AFTER_MS = 1200;
+static const uint32_t SILENCE_MS_LONG = 380;
+static const uint32_t SILENCE_ADAPT_AFTER_MS = 1300;
 static const uint32_t MAX_WAIT_SPEECH_MS = 5000;
-static const size_t VAD_START_SAMPLES = 640;       // 40 ms — speech onset
-static const size_t VAD_END_SAMPLES = 320;         // 20 ms — end detection
-static const size_t VAD_START_HITS = 5;            // consecutive speech-like windows (~200 ms)
-static const size_t NOISE_CALIB_SAMPLES = SAMPLE_RATE / 4;  // 250 ms ambient calib
-static const size_t MIN_SPEECH_SAMPLES = SAMPLE_RATE * 55 / 100;  // 0.55 s
-static const size_t SPEECH_PEAK_WINDOWS_MIN = 7;   // ~140 ms above peak
-static const size_t SPEECH_VOICED_WINDOWS_MIN = 5; // frames with speech-like ZCR+energy
+static const size_t VAD_START_SAMPLES = 640;
+static const size_t VAD_END_SAMPLES = 320;
+static const size_t VAD_START_HITS = 6;            // ~240 ms sustained
+static const size_t NOISE_CALIB_SAMPLES = SAMPLE_RATE / 4;
+static const size_t MIN_SPEECH_SAMPLES = SAMPLE_RATE * 3 / 5;  // 0.60 s
+static const size_t SPEECH_PEAK_WINDOWS_MIN = 6;
+static const size_t SPEECH_VOICED_WINDOWS_MIN = 5;
 static const size_t PREROLL_SAMPLES = SAMPLE_RATE * 3 / 10;  // 300 ms kept before onset
-static const uint32_t POST_PLAY_FLUSH_MS = 250;    // drop mic echo after speaker off
+static const uint32_t POST_PLAY_FLUSH_MS = 450;    // drop mic echo after speaker off
+static const uint32_t POST_TEXT_PAUSE_MS = 2500;   // ignore mic after serial text cmd
+static const uint32_t SERIAL_TYPING_PAUSE_MS = 800; // extend pause while serial chars arrive
 static const uint32_t TAIL_KEEP_MS = 120;          // trailing silence kept in upload
 // Cooldown only when Groq returns 429 (see note_stt_rate_limit / stt_blocked_until_ms).
 static const uint32_t STT_DAILY_LIMIT_BACKOFF_MS = 4UL * 3600UL * 1000UL;
 
 static float noise_floor_rms = 0.012f;
+static float last_onset_peak_rms = 0.0f;
 
 static uint32_t stt_last_call_ms = 0;
 static uint32_t stt_blocked_until_ms = 0;
@@ -139,6 +143,7 @@ static volatile bool tts_connecting = false;
 static uint32_t groq_tls_last_ok_ms = 0;
 static uint32_t tts_tls_last_ok_ms = 0;
 static bool just_played = false;
+static uint32_t listen_paused_until_ms = 0;
 
 enum State { STATE_LISTEN, STATE_PROCESS, STATE_SPEAK };
 State state = STATE_LISTEN;
@@ -154,6 +159,7 @@ bool speak_text_ex(const String& text, bool google_only);
 bool google_cloud_tts_stream_play(const String& text);
 void end_turn_cleanup();
 void play_filler_chirp();
+void poll_serial_commands();
 
 // Incremental HTTP body reader (handles chunked transfer encoding) so TTS
 // audio can be played while it downloads instead of buffering the whole WAV.
@@ -163,6 +169,36 @@ struct BodyReader {
   long remaining;  // content-length left, or bytes left in current chunk
   bool done;
 };
+
+// Incremental base64 decoder for streaming Google audioContent.
+struct B64Stream {
+  uint8_t quartet[4];
+  int n;
+};
+
+static inline int b64_val(char c) {
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+  if (c >= '0' && c <= '9') return c - '0' + 52;
+  if (c == '+') return 62;
+  if (c == '/') return 63;
+  return -1;
+}
+
+// Feed one base64 char; on complete quartet writes 1–3 bytes to dst, returns count.
+static int b64_feed(B64Stream* s, char c, uint8_t* dst) {
+  if (c == '=' || c == '\n' || c == '\r' || c == ' ') return 0;
+  int v = b64_val(c);
+  if (v < 0) return 0;
+  s->quartet[s->n++] = (uint8_t)v;
+  if (s->n < 4) return 0;
+  s->n = 0;
+  dst[0] = (uint8_t)((s->quartet[0] << 2) | (s->quartet[1] >> 4));
+  dst[1] = (uint8_t)((s->quartet[1] << 4) | (s->quartet[2] >> 2));
+  dst[2] = (uint8_t)((s->quartet[2] << 6) | s->quartet[3]);
+  return 3;
+}
+
 int body_reader_read(BodyReader* br, uint8_t* dst, size_t want);
 bool body_read_exact(BodyReader* br, uint8_t* dst, size_t n);
 
@@ -286,7 +322,9 @@ void update_noise_floor(float rms, bool likely_silence) {
 
 float vad_onset_threshold() {
   float t = noise_floor_rms * VAD_ONSET_SNR;
-  return t > VAD_ABS_MIN ? t : VAD_ABS_MIN;
+  if (t < VAD_ABS_MIN) t = VAD_ABS_MIN;
+  if (t > VAD_ONSET_ABS_MAX) t = VAD_ONSET_ABS_MAX;
+  return t;
 }
 
 float vad_end_threshold() {
@@ -296,6 +334,7 @@ float vad_end_threshold() {
 }
 
 bool window_looks_like_speech(float rms, float zcr) {
+  if (rms < VAD_ONSET_ABS_MIN) return false;
   if (rms < vad_onset_threshold()) return false;
   if (zcr < ZCR_SPEECH_MIN || zcr > ZCR_SPEECH_MAX) return false;
   return true;
@@ -375,15 +414,25 @@ bool recording_has_speech() {
 
   float avg = sample_rms(record_buf, record_count);
   float min_avg = noise_floor_rms * SPEECH_MIN_SNR;
-  if (min_avg < SPEECH_ABS_MIN) min_avg = SPEECH_ABS_MIN;
+  float abs_floor = SPEECH_ABS_MIN;
+  if (last_onset_peak_rms > 0.0f) {
+    float adaptive = last_onset_peak_rms * 0.30f;
+    if (adaptive > abs_floor) abs_floor = adaptive;
+  }
+  if (min_avg < abs_floor) min_avg = abs_floor;
   if (avg < min_avg) {
-    Serial.printf("listen: reject quiet (avg=%.3f need=%.3f nf=%.3f)\n",
-                  avg, min_avg, noise_floor_rms);
+    Serial.printf("listen: reject quiet (avg=%.3f need=%.3f onset=%.3f nf=%.3f)\n",
+                  avg, min_avg, last_onset_peak_rms, noise_floor_rms);
     return false;
   }
 
   float peak_need = noise_floor_rms * SPEECH_PEAK_SNR;
   if (peak_need < SPEECH_PEAK_ABS) peak_need = SPEECH_PEAK_ABS;
+  if (last_onset_peak_rms > 0.0f) {
+    float adaptive_peak = last_onset_peak_rms * 0.68f;
+    if (peak_need > adaptive_peak) peak_need = adaptive_peak;
+  }
+  if (peak_need > SPEECH_PEAK_ABS_MAX) peak_need = SPEECH_PEAK_ABS_MAX;
 
   float peak = 0.0f;
   size_t peak_windows = 0;
@@ -450,6 +499,15 @@ bool is_whisper_hallucination(const String& text) {
       "amara.org",
       "mbc",
       "뉴스",
+      "감사합니다",
+      "감사합니다.",
+      "음... 그렇구나",
+      "그렇구나.",
+      "자막",
+      "자막 제공",
+      "채널",
+      "편집",
+      "협찬",
       nullptr,
   };
   for (int i = 0; blocked[i]; i++) {
@@ -604,12 +662,34 @@ bool record_utterance() {
   bool started = false;
   bool calibrated = false;
   size_t start_hits = 0;
+  float onset_peak_rms = 0.0f;
   float calib_min = 1.0f;
   size_t calib_n = 0;
   uint32_t silence_start = 0;
   uint32_t wait_start = millis();
 
   while (record_count < MAX_SAMPLES) {
+    // Serial typing (KOTEST) must not be picked up as speech by the mic.
+    if (Serial.available() > 0) {
+      poll_serial_commands();
+      listen_paused_until_ms = millis() + SERIAL_TYPING_PAUSE_MS;
+      start_hits = 0;
+      onset_peak_rms = 0.0f;
+      if (started) {
+        started = false;
+        record_count = 0;
+        silence_start = 0;
+        Serial.println("listen: cancelled (serial typing)");
+      }
+      if (state != STATE_LISTEN) {
+        i2s.end();
+        return false;
+      }
+      size_t drain = i2s.readBytes((uint8_t*)raw, sizeof(raw));
+      (void)drain;
+      continue;
+    }
+
     size_t bytes = i2s.readBytes((uint8_t*)raw, sizeof(raw));
     if (bytes == 0) {
       delay(1);
@@ -651,17 +731,28 @@ bool record_utterance() {
     if (!started) {
       bool speechish = window_looks_like_speech(rms, zcr);
       if (speechish) {
+        if (rms > onset_peak_rms) onset_peak_rms = rms;
         start_hits++;
         if (start_hits >= VAD_START_HITS) {
+          if (rms < VAD_ONSET_ABS_MIN || onset_peak_rms < VAD_ONSET_ABS_MIN) {
+            Serial.printf("listen: reject impulsive (rms=%.3f peak=%.3f)\n",
+                          rms, onset_peak_rms);
+            start_hits = 0;
+            onset_peak_rms = 0.0f;
+            continue;
+          }
           started = true;
           silence_start = 0;
-          Serial.printf("listen: voice detected (rms=%.3f zcr=%.2f)\n", rms, zcr);
+          last_onset_peak_rms = onset_peak_rms;
+          Serial.printf("listen: voice detected (rms=%.3f peak=%.3f zcr=%.2f)\n",
+                        rms, onset_peak_rms, zcr);
           // TLS for STT/LLM + separate TTS socket — both overlap with speech
           request_tls_preconnect();
           request_tts_preconnect();
         }
       } else {
         start_hits = 0;
+        onset_peak_rms = 0.0f;
         update_noise_floor(rms, true);
         if (millis() - wait_start > MAX_WAIT_SPEECH_MS) {
           Serial.println("listen: timeout waiting for speech");
@@ -706,6 +797,7 @@ bool record_utterance() {
     // Use quiet parts of rejected capture to refine floor for next turn.
     float trailing = sample_rms(record_buf, min(record_count, (size_t)VAD_START_SAMPLES));
     update_noise_floor(trailing, true);
+    last_onset_peak_rms = 0.0f;
     Serial.println("listen: no speech captured");
     return false;
   }
@@ -1772,35 +1864,6 @@ bool extract_json_string_value(const uint8_t* body, size_t body_len, const char*
   return true;
 }
 
-// Incremental base64 decoder for streaming Google audioContent.
-struct B64Stream {
-  uint8_t quartet[4];
-  int n;
-};
-
-static inline int b64_val(char c) {
-  if (c >= 'A' && c <= 'Z') return c - 'A';
-  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-  if (c >= '0' && c <= '9') return c - '0' + 52;
-  if (c == '+') return 62;
-  if (c == '/') return 63;
-  return -1;
-}
-
-// Feed one base64 char; on complete quartet writes 1–3 bytes to dst, returns count.
-static int b64_feed(B64Stream* s, char c, uint8_t* dst) {
-  if (c == '=' || c == '\n' || c == '\r' || c == ' ') return 0;
-  int v = b64_val(c);
-  if (v < 0) return 0;
-  s->quartet[s->n++] = (uint8_t)v;
-  if (s->n < 4) return 0;
-  s->n = 0;
-  dst[0] = (uint8_t)((s->quartet[0] << 2) | (s->quartet[1] >> 4));
-  dst[1] = (uint8_t)((s->quartet[1] << 4) | (s->quartet[2] >> 2));
-  dst[2] = (uint8_t)((s->quartet[2] << 6) | s->quartet[3]);
-  return 3;
-}
-
 // Stream Google Cloud TTS: play μ-law as base64 arrives (first audio ASAP).
 bool google_cloud_tts_stream_play(const String& text) {
   if (strlen(GOOGLE_API_KEY) == 0) return false;
@@ -2460,6 +2523,7 @@ bool run_text_pipeline(const String& transcript) {
     state = STATE_LISTEN;
   }
 
+  listen_paused_until_ms = millis() + POST_TEXT_PAUSE_MS;
   xSemaphoreGive(net_mutex);
   state = STATE_LISTEN;
   return ok;
@@ -2679,6 +2743,11 @@ void loop() {
       last_cooldown_log_ms = now;
     }
     delay(500);
+    return;
+  }
+
+  if (millis() < listen_paused_until_ms) {
+    delay(10);
     return;
   }
 
