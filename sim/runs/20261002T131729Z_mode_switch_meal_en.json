@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "sim/scenarios/mode_switch_meal_en.json",
+    "name": "mode_switch_meal_en"
+  },
+  "turns": [
+    {
+      "user": "배고파",
+      "assistant": "같이 먹자! 맛있다!",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 2199
+    },
+    {
+      "user": "사과 먹을래",
+      "assistant": "사과를 한 입씩 깨물어볼까?",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 2034
+    },
+    {
+      "user": "맛있다",
+      "assistant": "와, 사과 맛있어! 다음엔 뭐 먹고 싶어?",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 8690
+    },
+    {
+      "user": "사과가 영어로 뭐야",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 2038
+    },
+    {
+      "user": "그러면 바나나는?",
+      "assistant": "Banana!",
+      "mode": "J-en",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 8341
+    },
+    {
+      "user": "그만",
+      "assistant": "알았어, 그만하자.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 4623
+    },
+    {
+      "user": "또 놀자",
+      "assistant": "좋아, 또 놀자! 어떤 게임 할까?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 8847
+    }
+  ]
+}

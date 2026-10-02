@@ -1,0 +1,12 @@
+{
+  "name": "en_vocab_followup",
+  "description": "English study: apple → pen ellipsis → boat then fruit correction → pear",
+  "child_lines": [
+    "영어 공부하자",
+    "사과가 영어로 뭐야",
+    "그러면 펜은?",
+    "배는 영어로 뭐야",
+    "아니 배 말고 과일 배",
+    "진작에 말하지"
+  ]
+}

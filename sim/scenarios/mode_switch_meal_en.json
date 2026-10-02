@@ -1,0 +1,13 @@
+{
+  "name": "mode_switch_meal_en",
+  "description": "Play → meal → English without losing the last beat",
+  "child_lines": [
+    "배고파",
+    "사과 먹을래",
+    "맛있다",
+    "사과가 영어로 뭐야",
+    "그러면 바나나는?",
+    "그만",
+    "또 놀자"
+  ]
+}

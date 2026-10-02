@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "/Users/int/Projects/talkbot/sim/scenarios/mode_switch_meal_en.json",
+    "name": "mode_switch_meal_en"
+  },
+  "turns": [
+    {
+      "user": "배고파",
+      "assistant": "같이 먹자!",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 5603
+    },
+    {
+      "user": "사과 먹을래",
+      "assistant": "사과 맛있어!",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 3707
+    },
+    {
+      "user": "맛있다",
+      "assistant": "다른 과일도 먹고 싶어?",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 3814
+    },
+    {
+      "user": "사과가 영어로 뭐야",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 3829
+    },
+    {
+      "user": "그러면 바나나는?",
+      "assistant": "Banana!",
+      "mode": "J-en",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 4364
+    },
+    {
+      "user": "그만",
+      "assistant": "알았어, 그만할게.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 3416
+    },
+    {
+      "user": "또 놀자",
+      "assistant": "좋아, 또 놀자!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 4023
+    }
+  ]
+}

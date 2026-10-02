@@ -1,0 +1,10 @@
+{
+  "name": "en_vague_then_word",
+  "description": "Vague English ask then concrete word",
+  "child_lines": [
+    "영어 하자",
+    "영어로 뭐야?",
+    "사과",
+    "그러면 바나나는?"
+  ]
+}

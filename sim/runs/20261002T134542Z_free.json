@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "type": "free",
+    "turns": 10,
+    "seed": "영어 공부하자"
+  },
+  "turns": [
+    {
+      "user": "영어 공부하자",
+      "assistant": "Sure!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 11082
+    },
+    {
+      "user": "인형 디노랑 놀자!",
+      "assistant": "좋아, 디노랑 놀자! 어디서 놀까?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 2351
+    },
+    {
+      "user": "우주에서 놀자!",
+      "assistant": "우주에서 놀자! 우주선이야?우주선에 타서 별을 따라가 보자!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 1597
+    },
+    {
+      "user": "아니 말고, 디노랑 별똥별을 잡아볼래?",
+      "assistant": "별똥별을 잡아볼까? 우주에서 빛나는 별똥별이 어디에 있을까?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 2607
+    },
+    {
+      "user": "아니 말고, 디노랑 손잡고 빛나는 별똥별이 있는 구름을 찾아볼래?",
+      "assistant": "손잡고 빛나는 별똥별이 있는 구름을 찾아볼래? 우주에서 구름을 찾아서 손잡고 걸어가자!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 629
+    },
+    {
+      "user": "그러면 디노와 손잡고, 우주 구름을 찾아 걸어가자!",
+      "assistant": "우주 구름을 찾아 손잡고 걸어가자! 우주 구름이 어디에 있을까?",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 893
+    },
+    {
+      "user": "아니 말고, 디노랑 손잡고 우주 구름이 있는 무지개 구역을 찾아가자!",
+      "assistant": "우주 구름이 있는 무지개 구역을 찾아가자!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 2549
+    },
+    {
+      "user": "그러면 디노랑 무지개 구역으로 가는 거 어때?",
+      "assistant": "디노랑 무지개 구역으로 가는 거 어때?",
+      "mode": "L-nature",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 2625
+    },
+    {
+      "user": "디노랑 무지개 구역 가서 별똥별 잡자!",
+      "assistant": "디노랑 무지개 구역 가서 별똥별을 잡아볼까?",
+      "mode": "L-nature",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 1454
+    },
+    {
+      "user": "아니 말고, 디노랑 무지개 구역에서 별똥별을 잡아볼까?",
+      "assistant": "좋아, 디노랑 무지개 구역에서 별똥별을 잡아볼게!",
+      "mode": "L-nature",
+      "sticky": 1,
+      "entered": false,
+      "latency_ms": 3223
+    }
+  ]
+}

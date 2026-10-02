@@ -58,6 +58,9 @@ talkbot = **듣고 답하고 말하는 파이프라인**
 검증 스케치: `arduino/05_groq_voice_chat`  
 (마이크 → VAD → Groq Whisper → Chat → Orpheus TTS → 스피커)
 
+보호자 제어판(QR/PWA): [`control-panel/`](control-panel/) — Cloudflare에 올리고 인형 바닥 QR로 즉시 연다.  
+`./scripts/deploy_control_panel.sh` → `.env`의 `CONTROL_PANEL_URL` 설정 → `./scripts/sync_secrets.sh`
+
 ## 설계 원칙
 
 - **엔진 먼저, 장식 나중** — 대화 루프가 안정되기 전에 기능을 늘리지 않는다.

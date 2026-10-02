@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "/Users/int/Projects/talkbot/sim/scenarios/play_long_thread.json",
+    "name": "play_long_thread"
+  },
+  "turns": [
+    {
+      "user": "디노야",
+      "assistant": "난 디노야.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 683
+    },
+    {
+      "user": "나 공룡이야",
+      "assistant": "우와, 공룡이구나!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 3342
+    },
+    {
+      "user": "크앙!",
+      "assistant": "크앙, 무서워?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 3129
+    },
+    {
+      "user": "큰 공룡이야",
+      "assistant": "큰 공룡이구나!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 7150
+    },
+    {
+      "user": "알도 있어",
+      "assistant": "알도 있구나!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 1488
+    },
+    {
+      "user": "알이 깨졌어",
+      "assistant": "알이 깨졌어? 무슨 알이야?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 1093
+    },
+    {
+      "user": "친구가 나왔어",
+      "assistant": "친구가 나왔구나!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 1860
+    },
+    {
+      "user": "이름이 뭐야",
+      "assistant": "친구 이름은 토토야.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 416
+    },
+    {
+      "user": "뽀뽀라고 할래",
+      "assistant": "뽀뽀라고 할래? 좋아!좋아!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 5021
+    },
+    {
+      "user": "같이 쿵쿵 걷자",
+      "assistant": "같이 쿵쿵 걸어볼까?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 11195
+    }
+  ]
+}

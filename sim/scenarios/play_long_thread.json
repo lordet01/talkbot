@@ -1,0 +1,16 @@
+{
+  "name": "play_long_thread",
+  "description": "Home play: keep one thread across many short turns",
+  "child_lines": [
+    "디노야",
+    "나 공룡이야",
+    "크앙!",
+    "큰 공룡이야",
+    "알도 있어",
+    "알이 깨졌어",
+    "친구가 나왔어",
+    "이름이 뭐야",
+    "뽀뽀라고 할래",
+    "같이 쿵쿵 걷자"
+  ]
+}

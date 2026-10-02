@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "sim/scenarios/story_beats.json",
+    "name": "story_beats"
+  },
+  "turns": [
+    {
+      "user": "공룡 이야기 해줘",
+      "assistant": "작은 티라노가 부드러운 풀밭을 가득 메운 꽃들 사이에서 조용히 숨을 쉬며 놀고 있었어.",
+      "mode": "F-story",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 1799
+    },
+    {
+      "user": "그다음?",
+      "assistant": "그 작은 티라노는 갑자기 반짝이는 별빛을 따라 달려가며 작은 구름 위를 뛰어다녔어.",
+      "mode": "F-story",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 768
+    },
+    {
+      "user": "알이 깨졌어",
+      "assistant": "알이 깨지면 작은 새가 부드럽게 날아와 반짝이는 빛을 보여줬어.",
+      "mode": "F-story",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 3248
+    },
+    {
+      "user": "그다음?",
+      "assistant": "새는 부드럽게 날아와 작은 티라노에게 “안녕, 친구!”라고 인사했어.",
+      "mode": "F-story",
+      "sticky": 1,
+      "entered": false,
+      "latency_ms": 5930
+    },
+    {
+      "user": "그만",
+      "assistant": "알겠어.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 6874
+    }
+  ]
+}

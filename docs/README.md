@@ -8,6 +8,7 @@ Seeed Studio **ReSpeaker Lite** + **XIAO ESP32S3 통합보드** 기반 임베디
 |------|------|
 | [device-connection-status.md](./device-connection-status.md) | USB/DFU/시리얼 연결 상태 |
 | [voice-recognition-prototype-setup.md](./voice-recognition-prototype-setup.md) | 환경 구축 및 실행 가이드 |
+| [conversation-scenarios.md](./conversation-scenarios.md) | 교육용 인형 대화 카테고리·시나리오 설계 |
 
 ## 빠른 실행 (경로 B: ESP32/I2S)
 

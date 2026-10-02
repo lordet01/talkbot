@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "sim/scenarios/en_vocab_followup.json",
+    "name": "en_vocab_followup"
+  },
+  "turns": [
+    {
+      "user": "영어 공부하자",
+      "assistant": "Sure!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 680
+    },
+    {
+      "user": "사과가 영어로 뭐야",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 679
+    },
+    {
+      "user": "그러면 펜은?",
+      "assistant": "Pen!",
+      "mode": "J-en",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 1634
+    },
+    {
+      "user": "배는 영어로 뭐야",
+      "assistant": "Boat!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 772
+    },
+    {
+      "user": "아니 과일",
+      "assistant": "Pear!",
+      "mode": "J-en",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 832
+    },
+    {
+      "user": "진작에 말하지",
+      "assistant": "Sorry!",
+      "mode": "J-en",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 765
+    }
+  ]
+}

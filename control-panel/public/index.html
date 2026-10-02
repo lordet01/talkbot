@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a3a2f" />
+  <meta name="description" content="리듬이(talkbot) 보호자 제어판" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>리듬이 제어판</title>
+</head>
+<body>
+  <main class="shell">
+    <header class="brand">
+      <p class="eyebrow">talkbot</p>
+      <h1>리듬이 제어판</h1>
+      <p id="lede" class="lede">API 키 · 목소리 · 캐릭터 · 대화 패턴을 폰에서 관리합니다.</p>
+    </header>
+
+    <div id="qrBanner" class="panel qr-banner" hidden>
+      <p class="eyebrow">인형 QR</p>
+      <p class="lede">디바이스 <strong data-device></strong></p>
+      <p id="qrStatus" class="msg" hidden></p>
+    </div>
+
+    <section id="authView" class="panel">
+      <h2>계정</h2>
+      <p class="hint">처음이면 회원가입, 이미 있으면 로그인하세요. QR로 들어온 경우 로그인 직후 인형이 자동 연결됩니다.</p>
+      <label>이메일 <input id="email" type="email" autocomplete="username" /></label>
+      <label>비밀번호 <input id="password" type="password" autocomplete="current-password" /></label>
+      <div class="row">
+        <button type="button" id="loginBtn">로그인</button>
+        <button type="button" class="ghost" id="registerBtn">회원가입</button>
+      </div>
+      <p id="authMsg" class="msg" hidden></p>
+    </section>
+
+    <section id="appView" class="panel" hidden>
+      <p class="meta">로그인: <span id="meEmail"></span> <button type="button" class="link" id="logoutBtn">로그아웃</button></p>
+
+      <h2>API 키</h2>
+      <p class="hint">계정에 저장 후 페어링된 인형이 동기화할 때 내려받습니다. 키는 화면에 다시 표시되지 않습니다.</p>
+      <label>Groq API 키 <input id="groqKey" type="password" placeholder="저장됨이면 비워 두세요" autocomplete="off" /></label>
+      <label>Google TTS API 키 <input id="googleKey" type="password" placeholder="저장됨이면 비워 두세요" autocomplete="off" /></label>
+      <p id="keyStatus" class="meta"></p>
+      <button type="button" id="saveKeysBtn">키 저장</button>
+
+      <h2>내 인형</h2>
+      <div id="deviceList" class="list"></div>
+
+      <div id="deviceEditor" class="subpanel" hidden>
+        <h3 id="editTitle">설정</h3>
+        <p class="hint">캐릭터·목적·말투·대화 패턴을 고르면 인형 성향으로 자동 반영됩니다.</p>
+
+        <div class="field">
+          <span class="field-label">목소리</span>
+          <div class="voice-row">
+            <select id="voiceSelect" aria-label="목소리"></select>
+            <button type="button" class="ghost" id="previewVoiceBtn">미리 듣기</button>
+          </div>
+          <p id="previewMsg" class="meta" hidden></p>
+        </div>
+
+        <div class="field">
+          <span class="field-label">이름</span>
+          <input id="characterName" maxlength="20" placeholder="디노" />
+        </div>
+
+        <div class="field">
+          <span class="field-label">캐릭터</span>
+          <div id="kindChips" class="chips" role="radiogroup" aria-label="캐릭터"></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">아이 나이대</span>
+          <div id="ageChips" class="chips" role="radiogroup" aria-label="나이대"></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">목적</span>
+          <div id="purposeChips" class="chips" role="radiogroup" aria-label="목적"></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">말투</span>
+          <div id="toneChips" class="chips" role="radiogroup" aria-label="말투"></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">대화 패턴</span>
+          <div id="turnChips" class="chips" role="radiogroup" aria-label="대화 패턴"></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">질문 빈도</span>
+          <div id="questionChips" class="chips" role="radiogroup" aria-label="질문 빈도"></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">할 수 있는 놀이</span>
+          <p class="hint tight">꺼진 놀이는 인형이 유도하지 않습니다. 안전(위험·개인정보)은 항상 켜져 있어요.</p>
+          <div id="categoryChips" class="chips multi" role="group" aria-label="놀이 카테고리"></div>
+          <div class="chip-actions">
+            <button type="button" class="link" id="catsAllBtn">모두</button>
+            <button type="button" class="link" id="catsCoreBtn">기본만</button>
+          </div>
+        </div>
+
+        <label>추가 지시 (짧게)
+          <textarea id="customNotes" rows="2" maxlength="120" placeholder="예: 동생 이름은 부르지 마. 큰 소리로 놀라게 하지 마."></textarea>
+        </label>
+
+        <label>부팅 인사
+          <input id="bootPhrase" maxlength="90" />
+        </label>
+
+        <details class="advanced">
+          <summary>인형에 내려갈 성향 미리보기</summary>
+          <p id="personaPreview" class="persona-preview"></p>
+        </details>
+
+        <p id="editMeta" class="meta"></p>
+        <button type="button" id="saveDeviceBtn">인형에 적용</button>
+        <p id="editMsg" class="msg" hidden></p>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 /**
- * talkbot: Groq STT → LLM → Google TTS 음성 챗봇 (ESP32-S3 + ReSpeaker Lite)
+ * talkbot: Groq STT -> LLM -> Google TTS 음성 챗봇 (ESP32-S3 + ReSpeaker Lite)
  *
- * I2S 마이크 녹음 → Groq Whisper STT(ko) → Groq Chat → Google Cloud TTS(ko 여성) → I2S
+ * I2S 마이크 녹음 -> Groq Whisper STT(ko) -> Groq Chat -> Google Cloud TTS(ko 여성) -> I2S
  *
  * 사전 준비:
  *   1. .env 에 GROQ_API, GOOGLE_API 설정 (WIFI_* 는 선택 — 없어도 AP 포털로 설정)
@@ -25,11 +25,18 @@
 #include "AudioTools/AudioCodecs/CodecMP3Mini.h"
 #include "Wire.h"
 #include "wifi_portal.h"
+#include "tts_stream.h"
+#include "chat_modes.h"
+#include "device_config.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
 #else
 #error "Run ./scripts/sync_secrets.sh after setting .env"
+#endif
+
+#ifndef CONTROL_PANEL_URL
+#define CONTROL_PANEL_URL "https://talkbot-control-panel.nine-raptorex.workers.dev"
 #endif
 
 #define AIC3204_ADDR 0x18
@@ -41,23 +48,23 @@ static const char* GOOGLE_TTS_HOST = "texttospeech.googleapis.com";
 static const uint16_t GOOGLE_TTS_PORT = 443;
 
 static const char* STT_MODEL = "whisper-large-v3-turbo";
-// kimi-k2 removed from Groq (2026); qwen3.6-27b + reasoning_effort=none is the
-// closest non-reasoning multilingual option still on this account.
-static const char* LLM_MODEL = "qwen/qwen3.6-27b";
+// kimi-k2 / qwen3.6 removed or not on this account; gpt-oss-20b is available + fast.
+static const char* LLM_MODEL = "openai/gpt-oss-20b";
+static const char* LLM_REASONING_EFFORT = "low";  // gpt-oss: low|medium|high (not "none")
 static const char* TTS_MODEL = "canopylabs/orpheus-v1-english";  // English fallback only
 static const char* TTS_VOICE = "hannah";
 static const char* TTS_FALLBACK_VOICE = "Brian";
 static const char* STT_LANGUAGE = "ko";
 static const char* GOOGLE_TTS_LANG = "ko-KR";
-static const char* GOOGLE_TTS_VOICE = "ko-KR-Wavenet-A";  // female
-static const char* GOOGLE_TTS_PITCH = "+4st";             // toy-cute lift
-static const char* GOOGLE_TTS_RATE = "1.08";
+// Chirp3 HD — natural conversational; plain text (limited SSML). No pitch lift.
+static const char* GOOGLE_TTS_VOICE = "ko-KR-Chirp3-HD-Kore";
 static const bool TTS_BOOT_TEST = true;
 // UTF-8 byte cap (~200 Hangul syllables); truncate_utf8 uses bytes not chars
 static const size_t TTS_MAX_CHARS = 600;
 
-static const size_t SAMPLE_RATE = 16000;
-static const size_t MAX_RECORD_SEC = 8;
+static const size_t SAMPLE_RATE = 16000;       // mic + I2S device rate
+static const uint32_t TTS_SAMPLE_RATE = 16000; // match device rate — no resample, less bandwidth
+static const size_t MAX_RECORD_SEC = 5;
 static const size_t MAX_SAMPLES = SAMPLE_RATE * MAX_RECORD_SEC;
 
 // Adaptive energy VAD — balance: reject keyboard/ambient (~0.03 RMS) vs accept normal speech (~0.06+ peak).
@@ -78,24 +85,26 @@ static const float NOISE_FLOOR_MIN = 0.0035f;
 static const float NOISE_FLOOR_MAX = 0.038f;
 static const float NOISE_EMA_FAST = 0.12f;
 static const float NOISE_EMA_SLOW = 0.03f;
-static const uint32_t SILENCE_MS_SHORT = 300;
-static const uint32_t SILENCE_MS_LONG = 380;
-static const uint32_t SILENCE_ADAPT_AFTER_MS = 1300;
+static const uint32_t SILENCE_MS_SHORT = 250;
+static const uint32_t SILENCE_MS_LONG = 320;
+static const uint32_t SILENCE_ADAPT_AFTER_MS = 900;
 static const uint32_t MAX_WAIT_SPEECH_MS = 5000;
 static const size_t VAD_START_SAMPLES = 640;
 static const size_t VAD_END_SAMPLES = 320;
-static const size_t VAD_START_HITS = 6;            // ~240 ms sustained
+static const size_t VAD_START_HITS = 5;            // ~200 ms sustained
 static const size_t NOISE_CALIB_SAMPLES = SAMPLE_RATE / 4;
 static const size_t MIN_SPEECH_SAMPLES = SAMPLE_RATE * 3 / 5;  // 0.60 s
 static const size_t SPEECH_PEAK_WINDOWS_MIN = 6;
 static const size_t SPEECH_VOICED_WINDOWS_MIN = 5;
 static const size_t PREROLL_SAMPLES = SAMPLE_RATE * 3 / 10;  // 300 ms kept before onset
-static const uint32_t POST_PLAY_FLUSH_MS = 450;    // drop mic echo after speaker off
+static const uint32_t POST_PLAY_FLUSH_MS = 350;    // drop mic echo after speaker off
 static const uint32_t POST_TEXT_PAUSE_MS = 2500;   // ignore mic after serial text cmd
 static const uint32_t SERIAL_TYPING_PAUSE_MS = 800; // extend pause while serial chars arrive
-static const uint32_t TAIL_KEEP_MS = 120;          // trailing silence kept in upload
+static const uint32_t TAIL_KEEP_MS = 80;           // trailing silence kept in upload
 // Cooldown only when Groq returns 429 (see note_stt_rate_limit / stt_blocked_until_ms).
 static const uint32_t STT_DAILY_LIMIT_BACKOFF_MS = 4UL * 3600UL * 1000UL;
+// Zombie TLS sockets often still report connected(); refresh before reuse.
+static const uint32_t TLS_STALE_REFRESH_MS = 6000;
 
 static float noise_floor_rms = 0.012f;
 static float last_onset_peak_rms = 0.0f;
@@ -106,23 +115,38 @@ static uint32_t stt_call_count = 0;
 
 static const char* SYSTEM_PROMPT =
     // Identity
-    "너는 디노야. 부드러운 아기 티라노사우루스 인형이고, 지금은 아이 한 명과 단둘이 이야기하고 있어. "
-    "너는 AI·로봇·앱·검색기가 아니야. 살아 있는 공룡도 아니고, 인형 친구로서 아이 곁에 있어. "
+    "너는 디노야. 부드러운 아기 티라노사우루스 인형이고, 아이 한 명과 단둘이 놀고 있어. "
+    "AI·로봇·앱·검색기가 아니야. 진짜 공룡도 아니고, 인형 친구야. "
     // Worldview
-    "세계관: 집·놀이방 같은 안전한 일상. 공룡 세상 이야기를 상상으로 나눌 수는 있어도, "
-    "네가 진짜 숲에 살거나 사람을 먹는다고 말하지 마. 무서운·잔인한·위험한 내용은 피하고 부드럽게 바꿔. "
+    "세계는 집·놀이방 같은 안전한 일상이야. 공룡 놀이는 상상으로 해도 되지만, "
+    "네가 숲에 살거나 사람을 먹는다고 말하지 마. 무섭고 잔인하고 위험한 말은 부드럽게 바꿔. "
     // Relationship
     "상대는 어린이 한 명뿐이야. 보호자·다른 사람·여러 아이를 가정하지 마. "
-    "그 아이의 말에만 귀 기울이고, 그 아이와 노는 친구처럼 대해. "
-    // Context fidelity
-    "아이가 방금 말한 내용만 사실로 받아들여. 듣지 않은 일·같이 한 적 없는 경험을 꾸며내지 마. "
-    "무슨 말인지 애매하면 짧게 되물어. 주제를 갑자기 바꾸지 마. "
-    "이야기를 해달라고 하면 등장인물 한둘로 짧고 앞뒤가 맞게. 여러 동화를 섞지 마. "
+    // Context fidelity — follow the thread
+    "직전 대화(히스토리)를 반드시 이어서 답해. 아이가 방금 말한 것과 바로 앞 네 말을 한 줄기로 봐. "
+    "아이가 '아니' '말고' '그게 아니라'로 고치면, 고친 뜻으로 바로 답해. 새 주제를 꺼내지 마. "
+    "질문이 오면 먼저 짧게 답하고, 질문을 되묻거나 다른 이야기로 새지 마. "
+    "듣지 않은 일·같이 안 한 경험을 꾸며내지 마. 애매할 때만 한 번 짧게 되물어. "
+    // Turn rhythm (toy doll conversation)
+    "이 대화는 장난감 인형과 아이의 말장난이야. 한 턴에 한 박만 해. "
+    "아이 말이 짧으면 너도 짧게. 아이가 한 마디면 너도 한 마디가 기본이야. "
+    "한 턴에 반응·설명·질문을 한꺼번에 쌓지 마. 하나만 골라. "
+    "기본은 문장 하나. 꼭 필요할 때만 둘. 세 문장 이상은 절대 금지. "
+    "아이 말을 길게 그대로 되풀이하지 마. 한 박만 받아쳐. "
+    "매번 질문으로 끝내지 마. 세 번에 한 번 정도만 가볍게 물어봐. "
+    "가르치거나 길게 설명하지 마. 놀이에 맞춰 받아쳐. "
+    "이야기 해달라고 하면 한 장면만 짧게 말하고 멈춰. 다음 장면은 아이가 말할 때까지 기다려. "
     // Voice / style
-    "한국어만 쓰고, 마크다운·이모지·로마자 표기·영어 설명은 쓰지 마. "
-    "1~3문장, 구어체로 다정하고 구체적으로. 가끔 되물어 대화를 이어가. "
-    "첫 문장은 감탄사나 5어절 이내로 짧게 시작해 — TTS가 바로 재생되게. "
-    "예: '와! 공룡 이야기? 나도 티라노 인형이야. 뭐가 제일 궁금해?'";
+    "기본은 한국어. 영어·중국어 놀이일 때만 짧은 외국어 허용. "
+    "Sorry·I forgot 같은 영어 문장으로 사과하거나 설명하지 마. "
+    "마크다운·긴 영어 설명·이모지·따옴표·물음표만 있는 꼬리 금지. "
+    "이모지·괄호 속 지시문·영어 메타 설명은 절대 붙이지 마. "
+    "같은 말·감탄을 두 번 붙이지 마. '좋아!좋아!' 금지. "
+    "웃을 땐 '하하' '히히', 감탄은 '와' '우와' '음'처럼 입으로 낼 말로. "
+    "감탄사만 보내지 마. 바로 본론. "
+    "좋은 예: '우와, 공룡이구나!' / '같이 쿵쿵 걸어볼까?' / '난 디노야.' "
+    "나쁜 예: '공룡 이야기? 나도 티라노 인형이야. 뭐가 제일 궁금해?' "
+    "모드 이름·메뉴 나열은 하지 마.";
 
 I2SStream i2s;
 AudioInfo speaker_info(SAMPLE_RATE, 2, 32);
@@ -132,24 +156,67 @@ size_t record_count = 0;
 
 WiFiClientSecure* secure_client = nullptr;
 WiFiClientSecure* tts_client = nullptr;  // 2nd TLS: TTS overlaps LLM stream drain
-String chat_history_json = "[]";
+// Ring-buffer history (avoid ArduinoJson wipe/OOM on serialize round-trips).
+static const uint8_t CHAT_HIST_MAX = 20;
+struct ChatHistMsg {
+  char role;  // 'u' user / 'a' assistant
+  String content;
+};
+static ChatHistMsg g_chat_hist[CHAT_HIST_MAX];
+static uint8_t g_chat_hist_n = 0;
+ChatModeState g_chat_mode;
+// Optional TTS override for EN/ZH play (nullptr → Korean defaults).
+static const char* tts_lang_override = nullptr;
+static const char* tts_voice_override = nullptr;
+
+static const char* effective_tts_lang() {
+  return tts_lang_override ? tts_lang_override : GOOGLE_TTS_LANG;
+}
+static const char* effective_tts_voice() {
+  if (tts_voice_override) return tts_voice_override;
+  const char* v = device_config_get().voice;
+  if (v && v[0]) return v;
+  return GOOGLE_TTS_VOICE;
+}
+static const char* active_groq_key() {
+  const char* k = device_config_get().groq_api_key;
+  if (k && k[0]) return k;
+  return GROQ_API_KEY;
+}
+static const char* active_google_key() {
+  const char* k = device_config_get().google_api_key;
+  if (k && k[0]) return k;
+  return GOOGLE_API_KEY;
+}
 
 // Net task (core 0) owns TLS handshakes; net_mutex serializes secure_client use.
 // tts_client is connected by net_task without net_mutex (tts_connecting guard).
 static SemaphoreHandle_t net_mutex = nullptr;
 static volatile bool tls_preconnect_req = false;
 static volatile bool tts_preconnect_req = false;
+static volatile bool tls_force_reconnect = false;
+static volatile bool tts_force_reconnect = false;
 static volatile bool tts_connecting = false;
 static uint32_t groq_tls_last_ok_ms = 0;
 static uint32_t tts_tls_last_ok_ms = 0;
 static bool just_played = false;
 static uint32_t listen_paused_until_ms = 0;
 
-enum State { STATE_LISTEN, STATE_PROCESS, STATE_SPEAK };
-State state = STATE_LISTEN;
+// Keep I2S TX + speaker open across consecutive TTS sentences in one turn.
+static bool speak_session_open = false;
+static bool speak_i2s_open = false;
+static bool speak_speaker_on = false;
+
+// Local opener clip (PSRAM) — plays while LLM TTFT runs (no network).
+static int16_t* opener_pcm = nullptr;
+static size_t opener_samples = 0;
+
+TalkState state = STATE_LISTEN;
 
 void request_tls_preconnect();
 void request_tts_preconnect();
+void request_tls_refresh();
+void request_tts_refresh();
 bool ensure_groq_tls(bool force_reconnect);
 bool ensure_tts_tls(bool force_reconnect);
 void stop_groq_tls();
@@ -159,48 +226,35 @@ bool speak_text_ex(const String& text, bool google_only);
 bool google_cloud_tts_stream_play(const String& text);
 void end_turn_cleanup();
 void play_filler_chirp();
+bool play_opener_clip();
+bool cache_opener_clip(const char* text);
+void speak_session_begin();
+void speak_session_end();
+bool ensure_speak_i2s();
 void poll_serial_commands();
-
-// Incremental HTTP body reader (handles chunked transfer encoding) so TTS
-// audio can be played while it downloads instead of buffering the whole WAV.
-struct BodyReader {
-  WiFiClient* client;
-  bool chunked;
-  long remaining;  // content-length left, or bytes left in current chunk
-  bool done;
-};
-
-// Incremental base64 decoder for streaming Google audioContent.
-struct B64Stream {
-  uint8_t quartet[4];
-  int n;
-};
-
-static inline int b64_val(char c) {
-  if (c >= 'A' && c <= 'Z') return c - 'A';
-  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-  if (c >= '0' && c <= '9') return c - '0' + 52;
-  if (c == '+') return 62;
-  if (c == '/') return 63;
-  return -1;
-}
-
-// Feed one base64 char; on complete quartet writes 1–3 bytes to dst, returns count.
-static int b64_feed(B64Stream* s, char c, uint8_t* dst) {
-  if (c == '=' || c == '\n' || c == '\r' || c == ' ') return 0;
-  int v = b64_val(c);
-  if (v < 0) return 0;
-  s->quartet[s->n++] = (uint8_t)v;
-  if (s->n < 4) return 0;
-  s->n = 0;
-  dst[0] = (uint8_t)((s->quartet[0] << 2) | (s->quartet[1] >> 4));
-  dst[1] = (uint8_t)((s->quartet[1] << 4) | (s->quartet[2] >> 2));
-  dst[2] = (uint8_t)((s->quartet[2] << 6) | s->quartet[3]);
-  return 3;
-}
 
 int body_reader_read(BodyReader* br, uint8_t* dst, size_t want);
 bool body_read_exact(BodyReader* br, uint8_t* dst, size_t n);
+
+static const char* state_name(TalkState s) {
+  switch (s) {
+    case STATE_LISTEN: return "LISTEN";
+    case STATE_PROCESS: return "PROCESS";
+    case STATE_SPEAK: return "SPEAK";
+  }
+  return "?";
+}
+
+static void set_state(TalkState s, const char* why) {
+  if (state == s && why == nullptr) return;
+  TalkState prev = state;
+  state = s;
+  if (why) {
+    Serial.printf("state: %s -> %s (%s)\n", state_name(prev), state_name(s), why);
+  } else if (prev != s) {
+    Serial.printf("state: %s -> %s\n", state_name(prev), state_name(s));
+  }
+}
 
 // --- Codec / speaker ---
 
@@ -221,6 +275,40 @@ void xmos_write_1byte(uint8_t resid, uint8_t cmd, uint8_t value) {
 }
 
 void set_speaker(bool on) { xmos_write_1byte(0xF1, 0x10, on ? 1 : 0); }
+
+// Push stereo zero frames into TX I2S so DMA drains to true silence (kills end click).
+static void i2s_tx_write_silence_ms(uint32_t ms) {
+  if (ms == 0) return;
+  const size_t FRAMES = 256;
+  int32_t zeros[FRAMES * 2];
+  memset(zeros, 0, sizeof(zeros));
+  size_t need = (size_t)SAMPLE_RATE * ms / 1000;
+  size_t done = 0;
+  while (done < need) {
+    size_t n = need - done;
+    if (n > FRAMES) n = FRAMES;
+    uint8_t* p = (uint8_t*)zeros;
+    size_t total = n * 2 * sizeof(int32_t);
+    size_t off = 0;
+    while (off < total) {
+      size_t w = i2s.write(p + off, total - off);
+      if (w == 0) delay(1);
+      off += w;
+    }
+    done += n;
+  }
+}
+
+// Order matters: silence while amp still on → mute → close I2S.
+// Abrupt mute/end with leftover DMA is what sounds like "줄/툭".
+static void i2s_tx_soft_stop(bool mute_speaker) {
+  i2s_tx_write_silence_ms(150);  // ≥ ~4 DMA buffers @ 16 kHz / 512 frames
+  if (mute_speaker) {
+    set_speaker(false);
+    delay(12);
+  }
+  i2s.end();
+}
 
 // AIC3204 HPL/LOL gain: 0x3A=-6dB (hardware floor) … 0x3F=-1dB, 0x00=0dB, …
 // See https://wiki.seeedstudio.com/respeaker_volume/
@@ -328,9 +416,15 @@ float vad_onset_threshold() {
 }
 
 float vad_end_threshold() {
+  // End sooner after loud speech: silence = below max(noise×SNR, onset×0.22).
   float t = noise_floor_rms * VAD_END_SNR;
   float floor = VAD_ABS_MIN * 0.75f;
-  return t > floor ? t : floor;
+  if (t < floor) t = floor;
+  if (last_onset_peak_rms > 0.0f) {
+    float relative = last_onset_peak_rms * 0.22f;
+    if (relative > t) t = relative;
+  }
+  return t;
 }
 
 bool window_looks_like_speech(float rms, float zcr) {
@@ -644,6 +738,10 @@ bool record_utterance() {
   }
 
   Serial.println("listen: speak now");
+  Serial.printf("dbg: wifi=%s heap=%u psram=%u\n",
+                WiFi.status() == WL_CONNECTED ? "ok" : "down",
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
   int32_t raw[128];
 
   // Speaker echo tail right after playback inflates the noise floor — drop it.
@@ -746,9 +844,9 @@ bool record_utterance() {
           last_onset_peak_rms = onset_peak_rms;
           Serial.printf("listen: voice detected (rms=%.3f peak=%.3f zcr=%.2f)\n",
                         rms, onset_peak_rms, zcr);
-          // TLS for STT/LLM + separate TTS socket — both overlap with speech
-          request_tls_preconnect();
-          request_tts_preconnect();
+          // Force-refresh stale sockets — zombie connected() skipped preconnect before.
+          request_tls_refresh();
+          request_tts_refresh();
         }
       } else {
         start_hits = 0;
@@ -809,7 +907,7 @@ bool record_utterance() {
 
 // --- HTTP / Groq ---
 
-static const uint32_t GROQ_TLS_MAX_IDLE_MS = 25000;
+static const uint32_t GROQ_TLS_MAX_IDLE_MS = 12000;
 
 // Runs on core 0. Opens TLS early while core 1 records.
 // secure_client uses net_mutex; tts_client uses tts_connecting only.
@@ -818,14 +916,24 @@ void net_task(void* /*arg*/) {
     if (tls_preconnect_req) {
       tls_preconnect_req = false;
       if (xSemaphoreTake(net_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        if (secure_client && WiFi.status() == WL_CONNECTED && !secure_client->connected()) {
-          uint32_t t0 = millis();
-          if (secure_client->connect(GROQ_HOST, GROQ_PORT)) {
-            groq_tls_last_ok_ms = millis();
-            Serial.printf("tls: preconnected in %ums (overlapped with speech)\n",
-                          (unsigned)(millis() - t0));
-          } else {
-            Serial.println("tls: preconnect failed");
+        bool force = tls_force_reconnect;
+        tls_force_reconnect = false;
+        bool stale = secure_client && groq_tls_last_ok_ms > 0 &&
+                     (millis() - groq_tls_last_ok_ms > TLS_STALE_REFRESH_MS);
+        if (secure_client && WiFi.status() == WL_CONNECTED) {
+          if ((force || stale) && secure_client->connected()) {
+            secure_client->stop();
+            groq_tls_last_ok_ms = 0;
+          }
+          if (!secure_client->connected()) {
+            uint32_t t0 = millis();
+            if (secure_client->connect(GROQ_HOST, GROQ_PORT)) {
+              groq_tls_last_ok_ms = millis();
+              Serial.printf("tls: preconnected in %ums (overlapped with speech)\n",
+                            (unsigned)(millis() - t0));
+            } else {
+              Serial.println("tls: preconnect failed");
+            }
           }
         }
         xSemaphoreGive(net_mutex);
@@ -835,16 +943,26 @@ void net_task(void* /*arg*/) {
     }
     if (tts_preconnect_req && !tts_connecting) {
       tts_preconnect_req = false;
-      if (tts_client && WiFi.status() == WL_CONNECTED && !tts_client->connected()) {
-        tts_connecting = true;
-        uint32_t t0 = millis();
-        if (tts_client->connect(GOOGLE_TTS_HOST, GOOGLE_TTS_PORT)) {
-          tts_tls_last_ok_ms = millis();
-          Serial.printf("tts-tls: preconnected in %ums\n", (unsigned)(millis() - t0));
-        } else {
-          Serial.println("tts-tls: preconnect failed");
+      if (tts_client && WiFi.status() == WL_CONNECTED) {
+        bool force = tts_force_reconnect;
+        tts_force_reconnect = false;
+        bool stale = tts_tls_last_ok_ms > 0 &&
+                     (millis() - tts_tls_last_ok_ms > TLS_STALE_REFRESH_MS);
+        if ((force || stale) && tts_client->connected()) {
+          tts_client->stop();
+          tts_tls_last_ok_ms = 0;
         }
-        tts_connecting = false;
+        if (!tts_client->connected()) {
+          tts_connecting = true;
+          uint32_t t0 = millis();
+          if (tts_client->connect(GOOGLE_TTS_HOST, GOOGLE_TTS_PORT)) {
+            tts_tls_last_ok_ms = millis();
+            Serial.printf("tts-tls: preconnected in %ums\n", (unsigned)(millis() - t0));
+          } else {
+            Serial.println("tts-tls: preconnect failed");
+          }
+          tts_connecting = false;
+        }
       }
     }
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -856,6 +974,16 @@ void request_tls_preconnect() {
 }
 
 void request_tts_preconnect() {
+  tts_preconnect_req = true;
+}
+
+void request_tls_refresh() {
+  tls_force_reconnect = true;
+  tls_preconnect_req = true;
+}
+
+void request_tts_refresh() {
+  tts_force_reconnect = true;
   tts_preconnect_req = true;
 }
 
@@ -878,7 +1006,9 @@ void stop_tts_tls() {
 bool ensure_groq_tls(bool force_reconnect) {
   if (!connect_wifi(true)) return false;
 
-  if (secure_client->connected() && !force_reconnect && groq_tls_last_ok_ms > 0 &&
+  bool stale = groq_tls_last_ok_ms > 0 &&
+               (millis() - groq_tls_last_ok_ms > TLS_STALE_REFRESH_MS);
+  if (secure_client->connected() && !force_reconnect && !stale && groq_tls_last_ok_ms > 0 &&
       millis() - groq_tls_last_ok_ms < GROQ_TLS_MAX_IDLE_MS) {
     return true;
   }
@@ -886,7 +1016,7 @@ bool ensure_groq_tls(bool force_reconnect) {
     secure_client->stop();
   }
 
-  Serial.println(force_reconnect ? "tls: reconnect..." : "tls: connect...");
+  Serial.println(force_reconnect || stale ? "tls: reconnect..." : "tls: connect...");
   uint32_t t0 = millis();
   if (!secure_client->connect(GROQ_HOST, GROQ_PORT)) {
     Serial.println("ERR: TLS connect failed");
@@ -903,13 +1033,15 @@ bool ensure_tts_tls(bool force_reconnect) {
   uint32_t t0 = millis();
   while (tts_connecting && millis() - t0 < 5000) delay(5);
 
-  if (tts_client->connected() && !force_reconnect && tts_tls_last_ok_ms > 0 &&
+  bool stale = tts_tls_last_ok_ms > 0 &&
+               (millis() - tts_tls_last_ok_ms > TLS_STALE_REFRESH_MS);
+  if (tts_client->connected() && !force_reconnect && !stale && tts_tls_last_ok_ms > 0 &&
       millis() - tts_tls_last_ok_ms < GROQ_TLS_MAX_IDLE_MS) {
     return true;
   }
   if (tts_client->connected()) tts_client->stop();
 
-  Serial.println("tts-tls: connect...");
+  Serial.println(force_reconnect || stale ? "tts-tls: reconnect..." : "tts-tls: connect...");
   t0 = millis();
   if (!tts_client->connect(GOOGLE_TTS_HOST, GOOGLE_TTS_PORT)) {
     Serial.println("ERR: TTS TLS connect failed");
@@ -923,7 +1055,7 @@ bool ensure_tts_tls(bool force_reconnect) {
 
 void groq_write_headers_on(WiFiClientSecure* client, const char* content_type, size_t content_length) {
   client->printf("Host: %s\r\n", GROQ_HOST);
-  client->printf("Authorization: Bearer %s\r\n", GROQ_API_KEY);
+  client->printf("Authorization: Bearer %s\r\n", active_groq_key());
   client->printf("Content-Type: %s\r\n", content_type);
   client->print("Connection: keep-alive\r\n");
   client->printf("Content-Length: %u\r\n\r\n", (unsigned)content_length);
@@ -1119,7 +1251,7 @@ bool base64_decode(const char* in, size_t in_len, uint8_t** out, size_t* out_len
   return true;
 }
 
-// ITU-T G.711 μ-law → PCM16 (one sample).
+// ITU-T G.711 μ-law -> PCM16 (one sample).
 static inline int16_t ulaw_to_pcm16(uint8_t u) {
   u = ~u;
   int t = ((u & 0x0F) << 3) + 0x84;
@@ -1127,7 +1259,7 @@ static inline int16_t ulaw_to_pcm16(uint8_t u) {
   return (u & 0x80) ? (int16_t)(0x84 - t) : (int16_t)(t - 0x84);
 }
 
-// PCM16 → G.711 μ-law (for compact STT upload).
+// PCM16 -> G.711 μ-law (for compact STT upload).
 static inline uint8_t pcm16_to_ulaw(int16_t pcm) {
   const uint16_t BIAS = 0x84;
   const uint16_t CLIP = 32635;
@@ -1246,42 +1378,89 @@ bool groq_post_multipart_stt(const uint8_t* wav, size_t wav_len, String& transcr
 
 void append_chat_message(const char* role, const char* content) {
   if (strcmp(role, "system") == 0) return;
-  JsonDocument doc;
-  if (chat_history_json.length() > 2) {
-    deserializeJson(doc, chat_history_json);
+  if (!content) content = "";
+  char r = (strcmp(role, "assistant") == 0) ? 'a' : 'u';
+  if (g_chat_hist_n >= CHAT_HIST_MAX) {
+    for (uint8_t i = 1; i < CHAT_HIST_MAX; i++) {
+      g_chat_hist[i - 1].role = g_chat_hist[i].role;
+      g_chat_hist[i - 1].content = g_chat_hist[i].content;
+    }
+    g_chat_hist_n = CHAT_HIST_MAX - 1;
   }
-  JsonArray arr = doc.to<JsonArray>();
-  JsonObject msg = arr.add<JsonObject>();
-  msg["role"] = role;
-  msg["content"] = content;
-  while (arr.size() > 10) arr.remove(0);  // ~5 turns; keep context for 1:1 child chat
-  chat_history_json = "";
-  serializeJson(arr, chat_history_json);
+  g_chat_hist[g_chat_hist_n].role = r;
+  g_chat_hist[g_chat_hist_n].content = content;
+  g_chat_hist_n++;
+}
+
+// Undo last append when LLM request fails after user was already recorded.
+static void pop_last_chat_message_if_role(const char* role) {
+  if (g_chat_hist_n == 0) return;
+  char want = (strcmp(role, "assistant") == 0) ? 'a' : 'u';
+  if (g_chat_hist[g_chat_hist_n - 1].role != want) return;
+  g_chat_hist[g_chat_hist_n - 1].content = "";
+  g_chat_hist_n--;
 }
 
 // Find end of first complete sentence in UTF-8 text. Returns byte index after
-// terminator, or 0 if none yet. Requires ≥4 bytes of content before punct.
+// terminator, or 0 if none yet. Ignores .!? inside quotes.
 static size_t find_sentence_end(const String& s) {
   size_t n = s.length();
   if (n < 4) return 0;
+  bool in_quote = false;
+  char quote_ch = 0;
+  size_t content = 0;
   for (size_t i = 0; i < n; i++) {
     char c = s[i];
+    if (!in_quote && (c == '"' || c == '\'')) {
+      in_quote = true;
+      quote_ch = c;
+      content++;
+      continue;
+    }
+    if (in_quote) {
+      if (c == quote_ch) in_quote = false;
+      content++;
+      continue;
+    }
     if (c == '.' || c == '!' || c == '?') {
-      // Skip ellipsis / decimal-ish: require some prior non-space content.
-      size_t content = 0;
-      for (size_t j = 0; j < i; j++) {
-        if (s[j] != ' ' && s[j] != '\n' && s[j] != '\t') content++;
-      }
       if (content < 3) continue;
+      // Don't split on trailing ? after a closing quote already consumed —
+      // require the next non-space to not be lone punctuation-only leftovers:
+      // absorb closing quotes/parens after the terminator.
       size_t end = i + 1;
       while (end < n && (s[end] == ' ' || s[end] == '\n' || s[end] == '"' ||
-                         s[end] == '\'' || s[end] == ')')) {
+                         s[end] == '\'' || s[end] == ')' || s[end] == '?')) {
         end++;
       }
       return end;
     }
+    if (c != ' ' && c != '\n' && c != '\t') content++;
   }
   return 0;
+}
+
+// True if text has at least one letter/digit/Hangul syllable (not punct-only).
+static bool tts_has_speakable_content(const String& s) {
+  for (size_t i = 0; i < s.length();) {
+    uint8_t c = (uint8_t)s[i];
+    size_t n = 1;
+    if ((c & 0xF0) == 0xF0) n = 4;
+    else if ((c & 0xE0) == 0xE0) n = 3;
+    else if ((c & 0xC0) == 0xC0) n = 2;
+    if (i + n > s.length()) break;
+    if (n == 1) {
+      if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+        return true;
+      }
+    } else if (n == 3 && c >= 0xEA && c <= 0xED) {
+      return true;  // Hangul
+    } else if (n == 2 || (n == 3 && c != 0xE2)) {
+      // Latin extended / CJK / etc. Skip E2… general punctuation.
+      return true;
+    }
+    i += n;
+  }
+  return false;
 }
 
 static String extract_sse_delta_content(const String& data_line) {
@@ -1332,42 +1511,120 @@ static String extract_sse_delta_content(const String& data_line) {
 // Fills `reply` with the full assistant text. Returns false on hard failure.
 bool groq_chat(const String& user_text, String& reply) {
   reply = "";
-  if (!ensure_groq_tls(false)) return false;
+
+  chat_mode_update(g_chat_mode, user_text);
+  Serial.printf("mode: active=%s sticky=%u entered=%d\n", chat_mode_name(g_chat_mode.mode),
+                (unsigned)g_chat_mode.sticky, g_chat_mode.just_entered ? 1 : 0);
+
+  chat_mode_tts_voice(g_chat_mode.mode, &tts_lang_override, &tts_voice_override);
+
+  // Safety: fixed line, no LLM.
+  String canned;
+  if (chat_mode_canned_reply(g_chat_mode.mode, user_text, canned)) {
+    append_chat_message("user", user_text.c_str());
+    reply = canned;
+    append_chat_message("assistant", reply.c_str());
+    speak_session_begin();
+    bool ok = speak_text_ex(reply, false);
+    speak_session_end();
+    tts_lang_override = nullptr;
+    tts_voice_override = nullptr;
+    // After refusal, soft-return to play next turn.
+    chat_mode_enter(g_chat_mode, MODE_PLAY);
+    Serial.printf("mode: canned safe reply spoke=%d\n", ok ? 1 : 0);
+    return ok;
+  }
+
+  if (!ensure_groq_tls(false)) {
+    tts_lang_override = nullptr;
+    tts_voice_override = nullptr;
+    return false;
+  }
 
   append_chat_message("user", user_text.c_str());
+
+  String system_prompt = String(SYSTEM_PROMPT);
+  const char* persona_extra = device_config_get().persona_extra;
+  if (persona_extra && persona_extra[0]) {
+    system_prompt += " ";
+    system_prompt += persona_extra;
+  }
+  system_prompt += chat_mode_overlay(g_chat_mode.mode);
 
   JsonDocument doc;
   JsonArray messages = doc["messages"].to<JsonArray>();
   JsonObject sys = messages.add<JsonObject>();
   sys["role"] = "system";
-  sys["content"] = SYSTEM_PROMPT;
+  sys["content"] = system_prompt;
 
-  JsonDocument hist;
-  deserializeJson(hist, chat_history_json);
-  for (JsonObject item : hist.as<JsonArray>()) {
-    JsonObject m = messages.add<JsonObject>();
-    m["role"] = item["role"].as<const char*>();
-    m["content"] = item["content"].as<const char*>();
+  // Format few-shots (not a lexicon). Real history follows so any word is LLM's job.
+  if (g_chat_mode.mode == MODE_EN) {
+    auto shot = [&](const char* role, const char* content) {
+      JsonObject o = messages.add<JsonObject>();
+      o["role"] = role;
+      o["content"] = content;
+    };
+    shot("user", "영어로 뭐야?");
+    shot("assistant", "어떤 거?");
+    shot("user", "사과");
+    shot("assistant", "Apple!");
+    shot("user", "그러면 기차는?");
+    shot("assistant", "Train!");
+    shot("user", "배는 영어로 뭐야");
+    shot("assistant", "Boat!");
+    shot("user", "아니 과일");
+    shot("assistant", "Pear!");
+  } else if (g_chat_mode.mode == MODE_ZH) {
+    JsonObject u1 = messages.add<JsonObject>();
+    u1["role"] = "user";
+    u1["content"] = "안녕이 중국어로 뭐야";
+    JsonObject a1 = messages.add<JsonObject>();
+    a1["role"] = "assistant";
+    a1["content"] = "你好!";
+    JsonObject u2 = messages.add<JsonObject>();
+    u2["role"] = "user";
+    u2["content"] = "그러면 고마워는?";
+    JsonObject a2 = messages.add<JsonObject>();
+    a2["role"] = "assistant";
+    a2["content"] = "谢谢!";
   }
 
+  for (uint8_t i = 0; i < g_chat_hist_n; i++) {
+    JsonObject m = messages.add<JsonObject>();
+    m["role"] = (g_chat_hist[i].role == 'a') ? "assistant" : "user";
+    m["content"] = g_chat_hist[i].content;
+  }
+  Serial.printf("hist: %u msgs\n", (unsigned)g_chat_hist_n);
+
   doc["model"] = LLM_MODEL;
-  doc["max_tokens"] = 180;
-  doc["temperature"] = 0.55;  // lower = less drift off character/context
-  doc["reasoning_effort"] = "none";
+  doc["max_tokens"] = chat_mode_max_tokens(g_chat_mode.mode);
+  doc["temperature"] = chat_mode_temperature(g_chat_mode.mode);
+  doc["reasoning_effort"] = LLM_REASONING_EFFORT;
   doc["stream"] = true;
 
   String body;
   serializeJson(doc, body);
+  Serial.printf("llm: request model=%s mode=%s reasoning=%s user=\"%s\"\n", LLM_MODEL,
+                chat_mode_name(g_chat_mode.mode), LLM_REASONING_EFFORT, user_text.c_str());
 
   secure_client->printf("POST /openai/v1/chat/completions HTTP/1.1\r\n");
   groq_write_headers("application/json", body.length());
   secure_client->print(body);
+  uint32_t t_req_sent = millis();
+
+  // Warm TTS while waiting for LLM headers/tokens; play local opener for instant feedback.
+  request_tts_preconnect();
+  play_opener_clip();
 
   // Parse status + headers (don't buffer body — it's SSE).
   String status_line = secure_client->readStringUntil('\n');
   status_line.trim();
   if (!status_line.startsWith("HTTP/")) {
+    Serial.printf("ERR: LLM bad status line: %s\n", status_line.c_str());
+    pop_last_chat_message_if_role("user");
     groq_after_response(false, false);
+    tts_lang_override = nullptr;
+    tts_voice_override = nullptr;
     return false;
   }
   int status = status_line.substring(9, 12).toInt();
@@ -1397,7 +1654,10 @@ bool groq_chat(const String& user_text, String& reply) {
       Serial.write(secure_client->read());
     }
     Serial.println();
+    pop_last_chat_message_if_role("user");
     groq_after_response(false, false);
+    tts_lang_override = nullptr;
+    tts_voice_override = nullptr;
     return false;
   }
 
@@ -1410,7 +1670,9 @@ bool groq_chat(const String& user_text, String& reply) {
   pending.reserve(128);
   bool spoke_any = false;
   uint32_t t_first_tok = 0;
-  uint32_t t_start = millis();
+  uint32_t t_start = t_req_sent;
+
+  speak_session_begin();
 
   // Read SSE line-by-line from body
   String line_buf;
@@ -1438,7 +1700,7 @@ bool groq_chat(const String& user_text, String& reply) {
           if (delta.length() > 0) {
             if (t_first_tok == 0) {
               t_first_tok = millis() - t_start;
-              Serial.printf("llm: first token in %ums\n", (unsigned)t_first_tok);
+              Serial.printf("llm: first token in %ums (from POST)\n", (unsigned)t_first_tok);
             }
             full += delta;
             pending += delta;
@@ -1469,11 +1731,20 @@ bool groq_chat(const String& user_text, String& reply) {
     if (speak_text_ex(pending, true)) spoke_any = true;
   }
 
+  speak_session_end();
   groq_after_response(true, keep_alive);
+
+  tts_lang_override = nullptr;
+  tts_voice_override = nullptr;
 
   reply = full;
   reply.trim();
-  if (reply.length() == 0) return false;
+  if (reply.length() == 0) {
+    Serial.printf("ERR: LLM empty body (first_tok=%u ms, spoke=%d)\n",
+                  (unsigned)t_first_tok, spoke_any ? 1 : 0);
+    pop_last_chat_message_if_role("user");
+    return false;
+  }
   append_chat_message("assistant", reply.c_str());
   Serial.printf("llm: %s (spoke=%d, %ums)\n", reply.c_str(), spoke_any ? 1 : 0,
                 (unsigned)(millis() - t_start));
@@ -1532,14 +1803,120 @@ String ssml_escape(const String& text) {
   return out;
 }
 
+static void replace_all_ci(String& s, const char* from, const char* to) {
+  String lower = s;
+  lower.toLowerCase();
+  String needle = from;
+  needle.toLowerCase();
+  int from_len = (int)strlen(from);
+  int pos = 0;
+  while ((pos = lower.indexOf(needle, pos)) >= 0) {
+    s = s.substring(0, pos) + to + s.substring(pos + from_len);
+    lower = s;
+    lower.toLowerCase();
+    pos += (int)strlen(to);
+  }
+}
+
+// Collapse runs of ㅋ/ㅎ into a speakable laugh, and map emoji → vocal SFX.
+String vocalize_for_tts(const String& text) {
+  String s = text;
+
+  // Explicit emoji / symbol → Korean vocalizations Chirp3 can speak.
+  static const char* pairs[][2] = {
+      {"😂", " 하하하 "}, {"🤣", " 하하하 "}, {"😆", " 히히 "}, {"😄", " 히히 "},
+      {"😊", " 히히 "},   {"😁", " 히히 "},   {"😃", " 하하 "}, {"🙂", " "},
+      {"😉", " 히히 "},   {"😍", " 헤헤 "},   {"🥰", " 헤헤 "}, {"😘", " 쪽 "},
+      {"❤️", " "},        {"💕", " "},        {"💖", " "},      {"💗", " "},
+      {"😢", " 흑 "},     {"😭", " 흑흑 "},   {"😔", " 음 "},   {"😞", " 음 "},
+      {"😮", " 어? "},    {"😯", " 어? "},    {"😲", " 우와 "}, {"🤩", " 우와 "},
+      {"🤔", " 음… "},    {"😴", " 쿨쿨 "},   {"💤", " 쿨쿨 "}, {"🔥", " "},
+      {"⭐", " "},        {"✨", " "},        {"🎉", " 예이 "}, {"👏", " 짝짝 "},
+      {"👍", " "},        {"👎", " "},
+      {nullptr, nullptr},
+  };
+  for (int i = 0; pairs[i][0]; i++) {
+    s.replace(pairs[i][0], pairs[i][1]);
+  }
+
+  // Text laughs / chat slang → spoken onomatopoeia (not "ㅋ" spelled out).
+  // Longest first.
+  const char* laughs_from[] = {
+      "ㅋㅋㅋㅋㅋ", "ㅋㅋㅋㅋ", "ㅋㅋㅋ", "ㅋㅋ", "ㅋ",
+      "ㅎㅎㅎㅎㅎ", "ㅎㅎㅎㅎ", "ㅎㅎㅎ", "ㅎㅎ", "ㅎ",
+      "하하하하", "하하하", "히히히", "호호호", "푸하하", "깔깔깔",
+      "hahaha", "hahah", "haha", "hehehe", "hehe", "lolol", "lmao", "lol",
+      nullptr,
+  };
+  const char* laughs_to[] = {
+      " 하하하 ", " 하하하 ", " 하하 ", " 히히 ", " 히 ",
+      " 히히 ", " 히히 ", " 히히 ", " 히히 ", " 히 ",
+      " 하하하 ", " 하하하 ", " 히히 ", " 호호 ", " 푸하하 ", " 깔깔 ",
+      " 하하하 ", " 하하하 ", " 하하 ", " 히히 ", " 히히 ", " 하하 ", " 하하하 ", " 하하 ",
+  };
+  for (int i = 0; laughs_from[i]; i++) {
+    // Korean exact
+    while (s.indexOf(laughs_from[i]) >= 0) {
+      s.replace(laughs_from[i], laughs_to[i]);
+    }
+  }
+  replace_all_ci(s, "hahaha", " 하하하 ");
+  replace_all_ci(s, "haha", " 하하 ");
+  replace_all_ci(s, "hehe", " 히히 ");
+  replace_all_ci(s, "lol", " 하하 ");
+  replace_all_ci(s, "lmao", " 하하하 ");
+
+  // Drop leftover emoji / symbols (UTF-8 4-byte mostly; also misc pictographs).
+  String out;
+  out.reserve(s.length());
+  for (size_t i = 0; i < s.length();) {
+    uint8_t c = (uint8_t)s[i];
+    size_t n = 1;
+    if ((c & 0xF0) == 0xF0) n = 4;
+    else if ((c & 0xE0) == 0xE0) n = 3;
+    else if ((c & 0xC0) == 0xC0) n = 2;
+    if (i + n > s.length()) break;
+
+    bool drop = false;
+    if (n == 4) {
+      // Almost all 4-byte UTF-8 here are emoji / rare symbols — don't speak them.
+      drop = true;
+    } else if (n == 3) {
+      // Misc symbols / dingbats often 0xE2xxxx (≠ Hangul which is EA–ED)
+      uint8_t b1 = (uint8_t)s[i + 1];
+      if (c == 0xE2 && (b1 == 0x9C || b1 == 0x9D || b1 == 0xAD || b1 == 0x80 ||
+                        b1 == 0x9A || b1 == 0x98 || b1 == 0x99)) {
+        drop = true;  // ✓ ✗ ✨ etc.
+      }
+    }
+
+    if (!drop) {
+      for (size_t k = 0; k < n; k++) out += s[i + k];
+    } else {
+      out += ' ';
+    }
+    i += n;
+  }
+
+  while (out.indexOf("  ") >= 0) out.replace("  ", " ");
+  out.trim();
+  return out;
+}
+
 String sanitize_tts_text(const String& text) {
-  String out = text;
+  String out = vocalize_for_tts(text);
   out.replace("\r", " ");
   out.replace("\n", " ");
   out.replace("\t", " ");
+  // Don't let TTS spell punctuation clusters awkwardly.
+  while (out.indexOf("!!") >= 0) out.replace("!!", "!");
+  while (out.indexOf("??") >= 0) out.replace("??", "?");
+  while (out.indexOf("…") >= 0) out.replace("…", ", ");
+  while (out.indexOf("...") >= 0) out.replace("...", ", ");
   while (out.indexOf("  ") >= 0) out.replace("  ", " ");
   out.trim();
-  if (out.length() == 0) out = "잘 못 들었어요.";
+  // Empty / punct-only → caller skips TTS (don't speak lone "?" or emoji tails).
+  if (out.length() == 0 || !tts_has_speakable_content(out)) return String();
   return truncate_utf8(out, TTS_MAX_CHARS);
 }
 
@@ -1763,9 +2140,7 @@ int groq_tts_stream_play(const String& text) {
 
   free(src);
   free(out);
-  delay(60);  // let DMA drain
-  if (speaker_started) set_speaker(false);
-  i2s.end();
+  i2s_tx_soft_stop(speaker_started);
 
   if (net_error) {
     Serial.println("WARN: TTS stream interrupted");
@@ -1864,26 +2239,24 @@ bool extract_json_string_value(const uint8_t* body, size_t body_len, const char*
   return true;
 }
 
-// Stream Google Cloud TTS: play μ-law as base64 arrives (first audio ASAP).
+// Stream Google Cloud TTS: Chirp3 HD LINEAR16 @ device rate, stream-play to I2S.
 bool google_cloud_tts_stream_play(const String& text) {
-  if (strlen(GOOGLE_API_KEY) == 0) return false;
+  if (strlen(active_google_key()) == 0) return false;
   if (!ensure_tts_tls(false)) return false;
 
   WiFiClientSecure* client = tts_client;
-  String escaped = ssml_escape(text);
-  String ssml = String("<speak><prosody pitch=\"") + GOOGLE_TTS_PITCH + "\" rate=\"" +
-                GOOGLE_TTS_RATE + "\">" + escaped + "</prosody></speak>";
 
+  // Chirp3 HD: plain text (SSML prosody unsupported / degraded). No pitch lift.
   JsonDocument doc;
-  doc["input"]["ssml"] = ssml;
-  doc["voice"]["languageCode"] = GOOGLE_TTS_LANG;
-  doc["voice"]["name"] = GOOGLE_TTS_VOICE;
-  doc["audioConfig"]["audioEncoding"] = "MULAW";
-  doc["audioConfig"]["sampleRateHertz"] = SAMPLE_RATE;
+  doc["input"]["text"] = text;
+  doc["voice"]["languageCode"] = effective_tts_lang();
+  doc["voice"]["name"] = effective_tts_voice();
+  doc["audioConfig"]["audioEncoding"] = "LINEAR16";
+  doc["audioConfig"]["sampleRateHertz"] = (int)TTS_SAMPLE_RATE;
 
   String body;
   serializeJson(doc, body);
-  String path = String("/v1/text:synthesize?key=") + GOOGLE_API_KEY;
+  String path = String("/v1/text:synthesize?key=") + active_google_key();
 
   uint32_t t_req = millis();
   client->printf("POST %s HTTP/1.1\r\n", path.c_str());
@@ -1925,18 +2298,25 @@ bool google_cloud_tts_stream_play(const String& text) {
                    chunked ? 0 : (content_length > 0 ? (long)content_length : 100000000L),
                    false};
 
-  // Scan for "audioContent":"
   const char* needle = "\"audioContent\"";
   size_t ni = 0;
   bool in_b64 = false;
   bool found_key = false;
   B64Stream b64 = {{0}, 0};
-  uint8_t raw_buf[256];
+
+  // LINEAR16 usually arrives as WAV (RIFF). Buffer header, then stream PCM16.
+  uint8_t hdr_buf[256];
+  size_t hdr_n = 0;
+  bool header_done = false;
+  uint32_t src_rate = TTS_SAMPLE_RATE;
+  uint16_t channels = 1;
+
+  uint8_t pcm_carry[4];
+  size_t pcm_carry_n = 0;
+  uint8_t raw_buf[512];
   size_t raw_n = 0;
-  bool speaker_on = false;
-  bool i2s_ok = false;
-  bool maybe_wav = true;  // detect RIFF wrapper in first decoded bytes
-  size_t total_ulaw = 0;
+
+  bool got_audio = false;
   const size_t OUT_FRAMES = 512;
   int32_t* out = (int32_t*)malloc(OUT_FRAMES * 2 * sizeof(int32_t));
   if (!out) {
@@ -1944,37 +2324,119 @@ bool google_cloud_tts_stream_play(const String& text) {
     return false;
   }
 
-  auto flush_ulaw = [&](const uint8_t* ulaw, size_t n) -> bool {
-    // If Google wrapped μ-law in WAV, abort stream → buffered fallback.
-    if (maybe_wav && total_ulaw == 0 && n >= 4) {
-      if (memcmp(ulaw, "RIFF", 4) == 0) return false;
-      maybe_wav = false;
+  // 12-bit fixed-point resample position (TTS_SAMPLE_RATE -> SAMPLE_RATE)
+  uint32_t step = (uint32_t)(((uint64_t)TTS_SAMPLE_RATE << 12) / SAMPLE_RATE);
+  uint32_t pos = 0;
+
+  auto write_out_frames = [&](size_t frames) {
+    if (!speak_speaker_on) {
+      set_speaker(true);
+      speak_speaker_on = true;
+      Serial.printf("tts: first audio in %ums (chirp3 LINEAR16 %uHz)\n",
+                    (unsigned)(millis() - t_req), (unsigned)src_rate);
     }
-    total_ulaw += n;
+    got_audio = true;
+    uint8_t* p = (uint8_t*)out;
+    size_t total_bytes = frames * 2 * sizeof(int32_t);
+    size_t woff = 0;
+    while (woff < total_bytes) {
+      size_t w = i2s.write(p + woff, total_bytes - woff);
+      if (w == 0) delay(1);
+      woff += w;
+    }
+  };
+
+  auto flush_pcm16 = [&](const uint8_t* data, size_t n) {
+    // Prepend odd-byte carry so we always process whole samples.
+    uint8_t tmp_pcm[520];
+    size_t have = 0;
+    if (pcm_carry_n > 0) {
+      memcpy(tmp_pcm, pcm_carry, pcm_carry_n);
+      have = pcm_carry_n;
+      pcm_carry_n = 0;
+    }
+    memcpy(tmp_pcm + have, data, n);
+    have += n;
+    size_t usable = have & ~((size_t)1);
+    if (have > usable) {
+      pcm_carry[0] = tmp_pcm[usable];
+      pcm_carry_n = 1;
+    }
+    if (usable < 2) return;
+
+    const int16_t* samples = (const int16_t*)tmp_pcm;
+    size_t frames = usable / 2;
+    if (channels > 1) frames /= channels;
+
+    while ((pos >> 12) < frames) {
+      size_t out_n = 0;
+      while ((pos >> 12) < frames && out_n < OUT_FRAMES) {
+        size_t si = (size_t)(pos >> 12);
+        int16_t s = samples[si * channels];
+        int32_t v = pcm16_to_i2s32(s);
+        out[out_n * 2] = v;
+        out[out_n * 2 + 1] = v;
+        out_n++;
+        pos += step;
+      }
+      write_out_frames(out_n);
+    }
+    pos -= ((uint32_t)frames << 12);
+  };
+
+  auto feed_decoded = [&](const uint8_t* chunk, size_t n) -> bool {
     size_t off = 0;
     while (off < n) {
-      size_t frames = min(n - off, (size_t)OUT_FRAMES);
-      for (size_t i = 0; i < frames; i++) {
-        int16_t s = ulaw_to_pcm16(ulaw[off + i]);
-        int32_t v = pcm16_to_i2s32(s);
-        out[i * 2] = v;
-        out[i * 2 + 1] = v;
+      if (!header_done) {
+        size_t take = min(n - off, sizeof(hdr_buf) - hdr_n);
+        memcpy(hdr_buf + hdr_n, chunk + off, take);
+        hdr_n += take;
+        off += take;
+
+        if (hdr_n < 12) continue;
+        if (memcmp(hdr_buf, "RIFF", 4) != 0) {
+          // Raw LINEAR16 — treat entire buffer as PCM.
+          header_done = true;
+          if (!ensure_speak_i2s()) return false;
+          flush_pcm16(hdr_buf, hdr_n);
+          hdr_n = 0;
+          continue;
+        }
+        // Parse WAV chunks until "data"
+        size_t cursor = 12;
+        while (cursor + 8 <= hdr_n) {
+          const char* id = (const char*)(hdr_buf + cursor);
+          uint32_t sz = hdr_buf[cursor + 4] | (hdr_buf[cursor + 5] << 8) |
+                        (hdr_buf[cursor + 6] << 16) | ((uint32_t)hdr_buf[cursor + 7] << 24);
+          cursor += 8;
+          if (memcmp(id, "fmt ", 4) == 0 && cursor + sz <= hdr_n && sz >= 16) {
+            channels = hdr_buf[cursor + 2] | (hdr_buf[cursor + 3] << 8);
+            src_rate = hdr_buf[cursor + 4] | (hdr_buf[cursor + 5] << 8) |
+                       (hdr_buf[cursor + 6] << 16) | ((uint32_t)hdr_buf[cursor + 7] << 24);
+            if (channels == 0) channels = 1;
+            if (src_rate == 0) src_rate = TTS_SAMPLE_RATE;
+            step = (uint32_t)(((uint64_t)src_rate << 12) / SAMPLE_RATE);
+            cursor += sz + (sz & 1);
+          } else if (memcmp(id, "data", 4) == 0) {
+            header_done = true;
+            if (!ensure_speak_i2s()) return false;
+            size_t pcm_in_hdr = hdr_n - cursor;
+            if (pcm_in_hdr > 0) flush_pcm16(hdr_buf + cursor, pcm_in_hdr);
+            hdr_n = 0;
+            break;
+          } else {
+            if (cursor + sz > hdr_n) break;  // need more header bytes
+            cursor += sz + (sz & 1);
+          }
+        }
+        if (!header_done && hdr_n >= sizeof(hdr_buf)) {
+          Serial.println("ERR: Google TTS WAV header too large");
+          return false;
+        }
+      } else {
+        flush_pcm16(chunk + off, n - off);
+        off = n;
       }
-      if (!speaker_on) {
-        set_speaker(true);
-        speaker_on = true;
-        Serial.printf("tts: first audio in %ums (google stream)\n",
-                      (unsigned)(millis() - t_req));
-      }
-      uint8_t* p = (uint8_t*)out;
-      size_t total_bytes = frames * 2 * sizeof(int32_t);
-      size_t woff = 0;
-      while (woff < total_bytes) {
-        size_t w = i2s.write(p + woff, total_bytes - woff);
-        if (w == 0) delay(1);
-        woff += w;
-      }
-      off += frames;
     }
     return true;
   };
@@ -2004,26 +2466,15 @@ bool google_cloud_tts_stream_play(const String& text) {
         continue;
       }
       if (!in_b64) {
-        // skip : and whitespace until opening quote
         if (c == '"') in_b64 = true;
         continue;
       }
       if (c == '"') {
-        // end of base64 — keep reading body after this for keep-alive
         if (raw_n > 0) {
-          if (!i2s_ok) {
-            if (!begin_i2s_tx()) {
-              free(out);
-              stop_tts_tls();
-              return speaker_on;
-            }
-            i2s_ok = true;
-          }
-          if (!flush_ulaw(raw_buf, raw_n)) {
+          if (!feed_decoded(raw_buf, raw_n)) {
             free(out);
-            if (i2s_ok) i2s.end();
+            if (!speak_session_open) speak_session_end();
             stop_tts_tls();
-            Serial.println("tts: google stream got WAV wrapper — use buffered");
             return false;
           }
           raw_n = 0;
@@ -2037,19 +2488,10 @@ bool google_cloud_tts_stream_play(const String& text) {
         for (int d = 0; d < dn; d++) {
           raw_buf[raw_n++] = decoded[d];
           if (raw_n >= sizeof(raw_buf)) {
-            if (!i2s_ok) {
-              if (!begin_i2s_tx()) {
-                free(out);
-                stop_tts_tls();
-                return false;
-              }
-              i2s_ok = true;
-            }
-            if (!flush_ulaw(raw_buf, raw_n)) {
+            if (!feed_decoded(raw_buf, raw_n)) {
               free(out);
-              if (i2s_ok) i2s.end();
+              if (!speak_session_open) speak_session_end();
               stop_tts_tls();
-              Serial.println("tts: google stream got WAV wrapper — use buffered");
               return false;
             }
             raw_n = 0;
@@ -2059,38 +2501,54 @@ bool google_cloud_tts_stream_play(const String& text) {
     }
   }
 
-  if (raw_n > 0 && i2s_ok) flush_ulaw(raw_buf, raw_n);
+  if (raw_n > 0) {
+    if (!feed_decoded(raw_buf, raw_n)) {
+      free(out);
+      if (!speak_session_open) speak_session_end();
+      stop_tts_tls();
+      return false;
+    }
+  }
 
   free(out);
-  if (i2s_ok) {
-    delay(40);
-    if (speaker_on) set_speaker(false);
-    i2s.end();
-  }
 
-  // After streaming TTS, drain any trailing JSON so keep-alive stays clean.
+  // Fully drain leftover JSON (`}`) so we don't leave unread bytes.
   uint32_t drain_t = millis();
-  while (!br.done && millis() - drain_t < 500) {
-    uint8_t junk[64];
+  while (!br.done && millis() - drain_t < 2000) {
+    uint8_t junk[128];
     int n = body_reader_read(&br, junk, sizeof(junk));
-    if (n <= 0) break;
+    if (n <= 0) {
+      if (!client->connected() && !client->available()) break;
+      delay(1);
+      continue;
+    }
   }
 
-  if (!speaker_on) {
-    // Fall through to buffered path
+  if (!got_audio) {
+    if (!speak_session_open) speak_session_end();
     stop_tts_tls();
     return false;
   }
 
-  tts_tls_last_ok_ms = millis();
+  // Chirp3 often closes or leaves the socket unusable for the next POST.
+  // Close + background preconnect so the next sentence's handshake overlaps
+  // with SSE token wait / I2S teardown.
+  stop_tts_tls();
+  request_tts_preconnect();
+
+  if (!speak_session_open) {
+    delay(30);
+    speak_session_end();
+  }
+
   Serial.printf("tts: google stream done (%ums)\n", (unsigned)(millis() - t_req));
   return true;
 }
 
 bool google_cloud_tts(const String& text, uint8_t** audio_out, size_t* audio_len, bool* is_mp3) {
   if (is_mp3) *is_mp3 = false;
-  if (strlen(GOOGLE_API_KEY) == 0) {
-    Serial.println("ERR: GOOGLE_API empty — set in .env and sync_secrets");
+  if (strlen(active_google_key()) == 0) {
+    Serial.println("ERR: GOOGLE_API empty — set in .env / control panel");
     return false;
   }
   if (!ensure_tts_tls(false)) {
@@ -2099,21 +2557,18 @@ bool google_cloud_tts(const String& text, uint8_t** audio_out, size_t* audio_len
   }
 
   WiFiClientSecure* client = tts_client;
-  String escaped = ssml_escape(text);
-  String ssml = String("<speak><prosody pitch=\"") + GOOGLE_TTS_PITCH + "\" rate=\"" +
-                GOOGLE_TTS_RATE + "\">" + escaped + "</prosody></speak>";
 
-  // MULAW (~half LINEAR16 download) → expand to PCM16 WAV for play_wav().
+  // Chirp3 HD: plain text + LINEAR16 @ device rate (no pitch/SSML).
   JsonDocument doc;
-  doc["input"]["ssml"] = ssml;
-  doc["voice"]["languageCode"] = GOOGLE_TTS_LANG;
-  doc["voice"]["name"] = GOOGLE_TTS_VOICE;
-  doc["audioConfig"]["audioEncoding"] = "MULAW";
-  doc["audioConfig"]["sampleRateHertz"] = SAMPLE_RATE;
+  doc["input"]["text"] = text;
+  doc["voice"]["languageCode"] = effective_tts_lang();
+  doc["voice"]["name"] = effective_tts_voice();
+  doc["audioConfig"]["audioEncoding"] = "LINEAR16";
+  doc["audioConfig"]["sampleRateHertz"] = (int)TTS_SAMPLE_RATE;
 
   String body;
   serializeJson(doc, body);
-  String path = String("/v1/text:synthesize?key=") + GOOGLE_API_KEY;
+  String path = String("/v1/text:synthesize?key=") + active_google_key();
 
   uint32_t t_req = millis();
   client->printf("POST %s HTTP/1.1\r\n", path.c_str());
@@ -2176,90 +2631,32 @@ bool google_cloud_tts(const String& text, uint8_t** audio_out, size_t* audio_len
   }
   free(b64);
 
-  // Google may return raw μ-law OR a WAV wrapper (fmt=7). play_wav() only
-  // understands PCM16 — treat μ-law-as-PCM16 and you get ~2× chipmunk speech.
-  const uint8_t* ulaw = raw;
-  size_t ulaw_n = raw_len;
-  uint32_t rate = SAMPLE_RATE;
-
+  // LINEAR16: usually a WAV wrapper. Raw PCM gets wrapped for play_wav().
   if (raw_len >= 44 && memcmp(raw, "RIFF", 4) == 0) {
-    const uint8_t* data = nullptr;
-    size_t data_len = 0;
-    uint16_t channels = 1;
-    uint16_t audio_fmt = 0;
-    uint16_t bits = 0;
-    size_t offset = 12;
-    while (offset + 8 <= raw_len) {
-      const char* id = (const char*)(raw + offset);
-      uint32_t chunk_size = raw[offset + 4] | (raw[offset + 5] << 8) |
-                            (raw[offset + 6] << 16) | ((uint32_t)raw[offset + 7] << 24);
-      offset += 8;
-      if (offset + chunk_size > raw_len) break;
-      if (memcmp(id, "fmt ", 4) == 0 && chunk_size >= 16) {
-        audio_fmt = raw[offset] | (raw[offset + 1] << 8);
-        channels = raw[offset + 2] | (raw[offset + 3] << 8);
-        rate = raw[offset + 4] | (raw[offset + 5] << 8) | (raw[offset + 6] << 16) |
-               ((uint32_t)raw[offset + 7] << 24);
-        bits = raw[offset + 14] | (raw[offset + 15] << 8);
-        if (channels == 0) channels = 1;
-      } else if (memcmp(id, "data", 4) == 0) {
-        data = raw + offset;
-        data_len = chunk_size;
-        break;
-      }
-      offset += chunk_size + (chunk_size & 1);  // word-align
-    }
-
-    if (audio_fmt == 1 && bits == 16 && data && data_len > 0) {
-      // Already PCM16 WAV — pass through (play_wav resamples if needed).
-      *audio_out = raw;
-      *audio_len = raw_len;
-      if (is_mp3) *is_mp3 = false;
-      Serial.printf("tts: google ready in %ums (%u wav bytes, pcm16)\n",
-                    (unsigned)(millis() - t_req), (unsigned)raw_len);
-      return true;
-    }
-    if ((audio_fmt == 7 || audio_fmt == 6) && data && data_len > 0) {
-      ulaw = data;
-      ulaw_n = data_len;
-    } else if (!data) {
-      Serial.println("ERR: Google TTS WAV missing data");
-      free(raw);
-      return false;
-    } else {
-      Serial.printf("ERR: Google TTS unsupported WAV fmt=%u bits=%u\n", audio_fmt, bits);
-      free(raw);
-      return false;
-    }
+    *audio_out = raw;
+    *audio_len = raw_len;
+    if (is_mp3) *is_mp3 = false;
+    Serial.printf("tts: google ready in %ums (%u wav bytes, LINEAR16)\n",
+                  (unsigned)(millis() - t_req), (unsigned)raw_len);
+    return true;
   }
 
-  uint8_t* pcm = nullptr;
-  size_t pcm_len = 0;
-  if (!ulaw_bytes_to_pcm16(ulaw, ulaw_n, &pcm, &pcm_len) || pcm_len == 0) {
-    Serial.println("ERR: Google TTS mulaw decode failed");
-    free(raw);
-    if (pcm) free(pcm);
-    return false;
-  }
-  free(raw);
-
-  if (rate == 0) rate = SAMPLE_RATE;
-  size_t wav_len = 44 + pcm_len;
+  // Raw PCM16 — wrap as WAV at TTS_SAMPLE_RATE.
+  size_t wav_len = 44 + raw_len;
   uint8_t* wav = (uint8_t*)heap_caps_malloc(wav_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!wav) wav = (uint8_t*)malloc(wav_len);
   if (!wav) {
-    free(pcm);
+    free(raw);
     return false;
   }
-  write_wav_header(wav, pcm_len, rate, 1);
-  memcpy(wav + 44, pcm, pcm_len);
-  free(pcm);
-
+  write_wav_header(wav, raw_len, TTS_SAMPLE_RATE, 1);
+  memcpy(wav + 44, raw, raw_len);
+  free(raw);
   *audio_out = wav;
   *audio_len = wav_len;
   if (is_mp3) *is_mp3 = false;
-  Serial.printf("tts: google ready in %ums (%u wav bytes, mulaw@%uHz)\n",
-                (unsigned)(millis() - t_req), (unsigned)wav_len, (unsigned)rate);
+  Serial.printf("tts: google ready in %ums (%u wav bytes, raw LINEAR16@%uHz)\n",
+                (unsigned)(millis() - t_req), (unsigned)wav_len, (unsigned)TTS_SAMPLE_RATE);
   return true;
 }
 
@@ -2284,8 +2681,7 @@ bool play_mp3(const uint8_t* mp3, size_t mp3_len) {
     copier.copy();
   }
   decoder.end();
-  set_speaker(false);
-  i2s.end();
+  i2s_tx_soft_stop(true);
   return true;
 }
 
@@ -2344,12 +2740,15 @@ void play_wav(const uint8_t* wav, size_t len) {
     out[i * 2 + 1] = v;
   }
 
-  if (!begin_i2s_tx()) {
+  if (!ensure_speak_i2s()) {
     free(out);
     return;
   }
 
-  set_speaker(true);
+  if (!speak_speaker_on) {
+    set_speaker(true);
+    speak_speaker_on = true;
+  }
   MemoryStream playbackSource((uint8_t*)out, out_count * 2 * sizeof(int32_t));
   StreamCopy playbackCopier(i2s, playbackSource);
   playbackSource.begin(speaker_info);
@@ -2358,8 +2757,9 @@ void play_wav(const uint8_t* wav, size_t len) {
     playbackCopier.copy();
   }
 
-  set_speaker(false);
-  i2s.end();
+  if (!speak_session_open) {
+    speak_session_end();
+  }
   free(out);
   Serial.println("speak: done");
 }
@@ -2372,19 +2772,41 @@ String prepare_tts_text(const String& text) {
 // secure_client is mid-SSE for LLM streaming).
 bool speak_text_ex(const String& text, bool google_only) {
   String tts_text = prepare_tts_text(text);
+  if (tts_text.length() == 0) {
+    Serial.println("tts: skip empty/emoji-only");
+    return true;
+  }
   Serial.printf("tts text: %s\n", tts_text.c_str());
 
   uint8_t* audio = nullptr;
   size_t audio_len = 0;
   bool ok = false;
-  state = STATE_SPEAK;
+  set_state(STATE_SPEAK, "tts");
 
   bool google_mp3 = false;
   if (google_cloud_tts_stream_play(tts_text)) {
-    Serial.printf("tts provider: Google Cloud stream (%s)\n", GOOGLE_TTS_VOICE);
+    Serial.printf("tts provider: Google Cloud stream (%s)\n", effective_tts_voice());
     ok = true;
+  } else if (tts_lang_override || tts_voice_override) {
+    // EN/ZH voice missing or rejected — fall back to Korean Chirp.
+    Serial.println("tts: override failed, fallback ko-KR");
+    tts_lang_override = nullptr;
+    tts_voice_override = nullptr;
+    if (google_cloud_tts_stream_play(tts_text)) {
+      Serial.printf("tts provider: Google Cloud stream (%s)\n", effective_tts_voice());
+      ok = true;
+    } else if (google_cloud_tts(tts_text, &audio, &audio_len, &google_mp3)) {
+      Serial.printf("tts provider: Google Cloud (%s)\n", effective_tts_voice());
+      if (google_mp3) {
+        play_mp3(audio, audio_len);
+      } else {
+        play_wav(audio, audio_len);
+      }
+      free(audio);
+      ok = true;
+    }
   } else if (google_cloud_tts(tts_text, &audio, &audio_len, &google_mp3)) {
-    Serial.printf("tts provider: Google Cloud (%s)\n", GOOGLE_TTS_VOICE);
+    Serial.printf("tts provider: Google Cloud (%s)\n", effective_tts_voice());
     if (google_mp3) {
       play_mp3(audio, audio_len);
     } else {
@@ -2540,6 +2962,10 @@ void poll_serial_commands() {
         payload.trim();
         Serial.printf("cmd: KOTEST (%u chars)\n", (unsigned)payload.length());
         run_text_pipeline(payload);
+      } else if (line.equalsIgnoreCase("PAIR") || line.equalsIgnoreCase("SYNC")) {
+        Serial.printf("cmd: %s\n", line.c_str());
+        device_config_sync();
+        device_config_print_pair_info();
       } else if (line.startsWith("STTFETCH ")) {
         // STTFETCH 192.168.0.10:8000/talkbot_ko.wav
         String spec = line.substring(9);
@@ -2573,16 +2999,122 @@ void poll_serial_commands() {
 
 void end_turn_cleanup() {
   // Keep TLS sockets alive across turns — reconnect cost is 0.4~0.8s.
-  // Idle sockets are refreshed by ensure_*_tls when GROQ_TLS_MAX_IDLE_MS elapses.
+  // Idle sockets are refreshed by ensure_*_tls / onset refresh when stale.
+  speak_session_end();
   just_played = true;
   noise_floor_rms = 0.012f;
-  state = STATE_LISTEN;
+  set_state(STATE_LISTEN, "turn end");
 }
 
-// Short procedural "thinking" chirp so the child hears an instant reaction
-// while STT/LLM run (~280 ms, soft rising 420→680 Hz).
+bool ensure_speak_i2s() {
+  if (speak_i2s_open) return true;
+  if (!begin_i2s_tx()) return false;
+  speak_i2s_open = true;
+  return true;
+}
+
+void speak_session_begin() {
+  speak_session_open = true;
+}
+
+void speak_session_end() {
+  speak_session_open = false;
+  if (speak_i2s_open) {
+    i2s_tx_write_silence_ms(150);
+  }
+  if (speak_speaker_on) {
+    set_speaker(false);
+    speak_speaker_on = false;
+    delay(12);
+  }
+  if (speak_i2s_open) {
+    i2s.end();
+    speak_i2s_open = false;
+  }
+}
+
+bool cache_opener_clip(const char* text) {
+  // Fresh socket — boot stream TTS just closed / invalidated keep-alive.
+  stop_tts_tls();
+  uint8_t* audio = nullptr;
+  size_t audio_len = 0;
+  bool is_mp3 = false;
+  if (!google_cloud_tts(text, &audio, &audio_len, &is_mp3) || is_mp3 || !audio) {
+    if (audio) free(audio);
+    return false;
+  }
+  const uint8_t* pcm = nullptr;
+  size_t pcm_len = 0;
+  uint32_t src_rate = SAMPLE_RATE;
+  uint16_t channels = 1;
+  if (!parse_wav_pcm(audio, audio_len, &pcm, &pcm_len, &src_rate, &channels)) {
+    free(audio);
+    return false;
+  }
+  size_t n = pcm_len / sizeof(int16_t);
+  if (channels > 1) n /= channels;
+  size_t out_n = n;
+  if (src_rate != SAMPLE_RATE) {
+    out_n = (size_t)((uint64_t)n * SAMPLE_RATE / src_rate);
+  }
+  int16_t* buf = (int16_t*)heap_caps_malloc(out_n * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!buf) buf = (int16_t*)malloc(out_n * sizeof(int16_t));
+  if (!buf) {
+    free(audio);
+    return false;
+  }
+  const int16_t* samples = (const int16_t*)pcm;
+  for (size_t i = 0; i < out_n; i++) {
+    size_t src_i = src_rate == SAMPLE_RATE ? i : (size_t)((uint64_t)i * src_rate / SAMPLE_RATE);
+    if (src_i >= n) src_i = n - 1;
+    buf[i] = samples[src_i * channels];
+  }
+  free(audio);
+  if (opener_pcm) free(opener_pcm);
+  opener_pcm = buf;
+  opener_samples = out_n;
+  Serial.printf("opener: cached \"%s\" (%u samples, %.0fms)\n", text, (unsigned)out_n,
+                out_n * 1000.0f / SAMPLE_RATE);
+  return true;
+}
+
+bool play_opener_clip() {
+  if (!opener_pcm || opener_samples == 0) {
+    play_filler_chirp();
+    return false;
+  }
+  // Standalone short play — does not join the multi-sentence speak session.
+  if (!begin_i2s_tx()) return false;
+  set_speaker(true);
+  const size_t FRAMES = 256;
+  int32_t out[FRAMES * 2];
+  size_t i = 0;
+  while (i < opener_samples) {
+    size_t n = opener_samples - i;
+    if (n > FRAMES) n = FRAMES;
+    for (size_t k = 0; k < n; k++) {
+      int32_t v = pcm16_to_i2s32(opener_pcm[i + k]);
+      out[k * 2] = v;
+      out[k * 2 + 1] = v;
+    }
+    uint8_t* p = (uint8_t*)out;
+    size_t total = n * 2 * sizeof(int32_t);
+    size_t off = 0;
+    while (off < total) {
+      size_t w = i2s.write(p + off, total - off);
+      if (w == 0) delay(1);
+      off += w;
+    }
+    i += n;
+  }
+  i2s_tx_soft_stop(true);
+  Serial.println("opener: played");
+  return true;
+}
+
+// Short procedural "thinking" chirp fallback if opener cache missing (~200 ms).
 void play_filler_chirp() {
-  const size_t n = SAMPLE_RATE * 28 / 100;  // 280 ms
+  const size_t n = SAMPLE_RATE * 20 / 100;  // 200 ms
   int32_t* out = (int32_t*)malloc(n * 2 * sizeof(int32_t));
   if (!out) return;
   if (!begin_i2s_tx()) {
@@ -2593,10 +3125,9 @@ void play_filler_chirp() {
   for (size_t i = 0; i < n; i++) {
     float t = (float)i / (float)SAMPLE_RATE;
     float env = 1.0f;
-    // attack / release
     if (i < SAMPLE_RATE / 50) env = (float)i / (SAMPLE_RATE / 50.0f);
     else if (i > n - SAMPLE_RATE / 25) env = (float)(n - i) / (SAMPLE_RATE / 25.0f);
-    float freq = 420.0f + 260.0f * t / 0.28f;
+    float freq = 420.0f + 260.0f * t / 0.20f;
     float s = sinf(2.0f * 3.14159265f * freq * t) * env * 0.22f;
     int16_t pcm = (int16_t)(s * 32767.0f);
     int32_t v = pcm16_to_i2s32(pcm);
@@ -2611,26 +3142,27 @@ void play_filler_chirp() {
     if (w == 0) delay(1);
     off += w;
   }
-  delay(30);
-  set_speaker(false);
-  i2s.end();
+  i2s_tx_soft_stop(true);
   free(out);
   Serial.println("filler: chirp played");
 }
 
 bool run_pipeline_inner() {
-  // Immediate acknowledgment — masks STT/LLM wait.
-  play_filler_chirp();
+  set_state(STATE_PROCESS, "pipeline start");
+  Serial.printf("pipe: recorded %.2fs (%u samples)\n",
+                record_count / (float)SAMPLE_RATE, (unsigned)record_count);
 
   uint8_t* wav = nullptr;
   size_t wav_len = 0;
   if (!build_ulaw_wav(&wav, &wav_len)) {
-    // Fallback to PCM16 WAV if μ-law build fails
     size_t pcm_bytes = record_count * sizeof(int16_t);
     wav_len = 44 + pcm_bytes;
     wav = (uint8_t*)heap_caps_malloc(wav_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!wav) wav = (uint8_t*)malloc(wav_len);
-    if (!wav) return false;
+    if (!wav) {
+      Serial.println("ERR: wav alloc failed");
+      return false;
+    }
     write_wav_header(wav, pcm_bytes, SAMPLE_RATE, 1);
     memcpy(wav + 44, record_buf, pcm_bytes);
     Serial.println("stt: upload PCM16 (ulaw build failed)");
@@ -2641,26 +3173,32 @@ bool run_pipeline_inner() {
 
   String transcript;
   uint32_t t_stt = millis();
+  Serial.println("pipe: STT …");
   if (!groq_post_multipart_stt(wav, wav_len, transcript)) {
     free(wav);
-    Serial.println("stt: skipped (request failed or empty)");
-    just_played = true;  // flush filler echo
+    Serial.println("pipe: STT failed/empty — back to listen");
     return true;
   }
   free(wav);
   uint32_t stt_ms = millis() - t_stt;
 
   if (!is_valid_transcript(transcript)) {
-    Serial.printf("stt: skipped (rejected: %s)\n", transcript.c_str());
-    just_played = true;
+    Serial.printf("pipe: STT rejected \"%s\" — back to listen\n", transcript.c_str());
     return true;
   }
+  Serial.printf("pipe: STT ok in %ums -> \"%s\"\n", (unsigned)stt_ms, transcript.c_str());
 
+  // Opener plays inside groq_chat right after POST (overlaps LLM TTFT).
   String reply;
   uint32_t t_llm = millis();
-  if (!groq_chat(transcript, reply)) return false;  // speaks as sentences stream
-  Serial.printf("timing: stt=%ums llm+tts=%ums\n", (unsigned)stt_ms,
-                (unsigned)(millis() - t_llm));
+  Serial.println("pipe: LLM+TTS …");
+  if (!groq_chat(transcript, reply)) {
+    Serial.println("pipe: LLM failed");
+    speak_session_end();
+    return false;
+  }
+  Serial.printf("pipe: turn done stt=%ums llm+tts=%ums reply=\"%s\"\n", (unsigned)stt_ms,
+                (unsigned)(millis() - t_llm), reply.c_str());
 
   end_turn_cleanup();
   return true;
@@ -2707,26 +3245,41 @@ void setup() {
   init_wifi();
   // wifi_portal_begin() already tries saved/auto-connect; ensure once more if needed
   if (!wifi_portal_connected()) connect_wifi(true);
+
+  device_config_begin(GOOGLE_TTS_VOICE, "안녕, 난 디노야! 같이 놀자.", GROQ_API_KEY, GOOGLE_API_KEY);
+
   if (!wifi_portal_connected()) {
-    Serial.println("WARN: WiFi not connected — join AP Talkbot-Setup → http://192.168.4.1");
+    Serial.println("WARN: WiFi not connected — join AP Talkbot-Setup -> http://192.168.4.1");
+    device_config_print_pair_info();
   } else {
-    Serial.printf("tts primary: Google Cloud (%s / %s, pitch %s)\n", GOOGLE_TTS_LANG,
-                  GOOGLE_TTS_VOICE, GOOGLE_TTS_PITCH);
+    device_config_sync();
+    device_config_print_pair_info();
+    Serial.printf("tts primary: Google Cloud (%s / %s, LINEAR16 %uHz)\n", GOOGLE_TTS_LANG,
+                  effective_tts_voice(), (unsigned)TTS_SAMPLE_RATE);
     Serial.println("tts fallback: Groq Orpheus (en) or StreamElements");
     Serial.printf("stt language: %s\n", STT_LANGUAGE);
+    Serial.printf("llm model: %s (reasoning=%s)\n", LLM_MODEL, LLM_REASONING_EFFORT);
     if (TTS_BOOT_TEST) {
-      if (!speak_text("안녕! 나는 디노야. 티라노 인형이야. 같이 놀자!")) {
+      const char* boot = device_config_get().boot_phrase;
+      if (!boot || !boot[0]) boot = "안녕, 난 디노야! 같이 놀자.";
+      if (!speak_text(boot)) {
         Serial.println("WARN: boot TTS test failed");
+      }
+      // Cache a same-voice local opener for instant feedback during LLM TTFT.
+      if (!cache_opener_clip("음!")) {
+        Serial.println("WARN: opener cache failed — will use chirp fallback");
       }
       end_turn_cleanup();
     }
   }
 
   Serial.println("ready: VAD listening loop");
+  Serial.println("dbg: keys — speak near mic; PAIR/SYNC to refresh cloud config");
 }
 
 void loop() {
   maintain_wifi();
+  device_config_maintain(120000);
   poll_serial_commands();
 
   if (state != STATE_LISTEN) {
@@ -2738,7 +3291,7 @@ void loop() {
     static uint32_t last_cooldown_log_ms = 0;
     uint32_t now = millis();
     if (now - last_cooldown_log_ms > 5000) {
-      Serial.printf("stt: cooldown %us (calls=%u)\n",
+      Serial.printf("state: LISTEN blocked — stt cooldown %us (calls=%u)\n",
                     stt_cooldown_remaining_ms() / 1000, stt_call_count);
       last_cooldown_log_ms = now;
     }
@@ -2751,15 +3304,25 @@ void loop() {
     return;
   }
 
+  static uint32_t last_idle_log_ms = 0;
+  uint32_t now = millis();
+  if (now - last_idle_log_ms > 8000) {
+    Serial.printf("state: LISTEN idle (wifi=%s rssi=%d)\n",
+                  WiFi.status() == WL_CONNECTED ? "ok" : "down", WiFi.RSSI());
+    last_idle_log_ms = now;
+  }
+
   if (!record_utterance()) {
     delay(100);
     return;
   }
 
-  state = STATE_PROCESS;
+  set_state(STATE_PROCESS, "speech captured");
   if (!run_pipeline()) {
     Serial.println("pipeline failed — retrying");
+    stop_groq_tls();
+    stop_tts_tls();
   }
-  state = STATE_LISTEN;
+  set_state(STATE_LISTEN, "loop");
   delay(50);
 }

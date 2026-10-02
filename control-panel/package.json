@@ -1,0 +1,18 @@
+{
+  "name": "talkbot-control-panel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "QR-based parent control panel for talkbot (PWA + API)",
+  "type": "module",
+  "scripts": {
+    "dev": "node local-server.mjs",
+    "start": "node local-server.mjs",
+    "deploy": "../scripts/deploy_control_panel.sh",
+    "db:create": "wrangler d1 create talkbot-control",
+    "db:migrate": "wrangler d1 execute talkbot-control --remote --file=./schema.sql",
+    "db:migrate:local": "wrangler d1 execute talkbot-control --local --file=./schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "리듬이 제어판",
+  "short_name": "리듬이",
+  "description": "talkbot 보호자 설정",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f241c",
+  "theme_color": "#1a3a2f",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

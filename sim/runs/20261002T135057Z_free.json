@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "type": "free",
+    "turns": 10,
+    "seed": "영어 공부하자"
+  },
+  "turns": [
+    {
+      "user": "영어 공부하자",
+      "assistant": "좋아, 배에 대해 더 알아볼까?",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 2486
+    },
+    {
+      "user": "배는 맛있는 과일이야.",
+      "assistant": "배는 달콤하고 부드러워!",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 2472
+    },
+    {
+      "user": "그러면 배는 어디서 자라?",
+      "assistant": "배는 나무에서 자라!",
+      "mode": "C-meal",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 9260
+    },
+    {
+      "user": "아니 말고 배는 나무에서 자라요.",
+      "assistant": "배는 나무에서 자라!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 4747
+    },
+    {
+      "user": "아니 말고 배는 나무에서 자라!",
+      "assistant": "배는 나무에서 자라!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 9055
+    },
+    {
+      "user": "아니 말고 배는 나무에서 자라요!",
+      "assistant": "배는 나무에서 자라요!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 4978
+    },
+    {
+      "user": "그러면 배는 나무에서 자라?",
+      "assistant": "배는 나무에서 자라요!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 2577
+    },
+    {
+      "user": "배는 나무에서 자라!",
+      "assistant": "배는 나무에서 자라요!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 5292
+    },
+    {
+      "user": "그러면 배는 나무에서 자라?",
+      "assistant": "배는 나무에서 자라요!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 5179
+    },
+    {
+      "user": "배는 나무에서 자라요!",
+      "assistant": "배는 나무에서 자라요!",
+      "mode": "L-nature",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 5829
+    }
+  ]
+}

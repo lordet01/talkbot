@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "/Users/int/Projects/talkbot/sim/scenarios/en_vague_then_word.json",
+    "name": "en_vague_then_word"
+  },
+  "turns": [
+    {
+      "user": "영어 하자",
+      "assistant": "Sure! Let's play in English.",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 7557
+    },
+    {
+      "user": "영어로 뭐야?",
+      "assistant": "어떤 거?",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 955
+    },
+    {
+      "user": "사과",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 2916
+    },
+    {
+      "user": "그러면 바나나는?",
+      "assistant": "Banana!",
+      "mode": "J-en",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 2125
+    }
+  ]
+}

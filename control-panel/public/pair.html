@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>리듬이로 이동</title>
+  <script>
+    // Legacy /pair.html QR → canonical control panel landing
+    location.replace("/" + location.search + location.hash);
+  </script>
+</head>
+<body>
+  <p><a id="go" href="/">제어판 열기</a></p>
+  <script>
+    document.getElementById("go").href = "/" + location.search + location.hash;
+  </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "/Users/int/Projects/talkbot/sim/scenarios/story_beats.json",
+    "name": "story_beats"
+  },
+  "turns": [
+    {
+      "user": "공룡 이야기 해줘",
+      "assistant": "우와, 공룡이구나! 같이 쿵쿵 걸어볼까?",
+      "mode": "F-story",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 3936
+    },
+    {
+      "user": "그다음?",
+      "assistant": "디노가 무릎을 굴려서 작은 구름을 만들었어. 그 구름 위에 앉아 별빛을 바라보며 숨을 쉬었지.",
+      "mode": "F-story",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 4089
+    },
+    {
+      "user": "알이 깨졌어",
+      "assistant": "알이 깨졌어? 그럼 작은 새가 뚝뚝 뛰어 나왔어!",
+      "mode": "F-story",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 6321
+    },
+    {
+      "user": "그다음?",
+      "assistant": "새가 손가락을 흔들며 “안녕, 디노!”라고 인사했어.",
+      "mode": "F-story",
+      "sticky": 1,
+      "entered": false,
+      "latency_ms": 6317
+    },
+    {
+      "user": "그만",
+      "assistant": "알았어. 다음에 또 놀자!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 5013
+    }
+  ]
+}

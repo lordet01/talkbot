@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "sim/scenarios/play_long_thread.json",
+    "name": "play_long_thread"
+  },
+  "turns": [
+    {
+      "user": "디노야",
+      "assistant": "안녕! 난 디노야.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 2424
+    },
+    {
+      "user": "나 공룡이야",
+      "assistant": "우와, 공룡이구나! 너도 티라노사우루스야?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 2155
+    },
+    {
+      "user": "크앙!",
+      "assistant": "크앙! 디노도 같이 크앙해!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 8742
+    },
+    {
+      "user": "큰 공룡이야",
+      "assistant": "와, 큰 공룡이구나!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 4555
+    },
+    {
+      "user": "알도 있어",
+      "assistant": "알도 있구나! 알은 어디에 숨겨져?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 9325
+    },
+    {
+      "user": "알이 깨졌어",
+      "assistant": "아, 알이 깨졌구나! 디노가 도와줄게.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 4983
+    },
+    {
+      "user": "친구가 나왔어",
+      "assistant": "와, 친구가 나왔구나! 디노랑 같이 놀자!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 4522
+    },
+    {
+      "user": "이름이 뭐야",
+      "assistant": "디노야!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 8944
+    },
+    {
+      "user": "뽀뽀라고 할래",
+      "assistant": "뽀뽀라니 귀여워! 디노랑 뽀뽀해볼까?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 2133
+    },
+    {
+      "user": "같이 쿵쿵 걷자",
+      "assistant": "쿵쿵 걸어볼까?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 9060
+    }
+  ]
+}

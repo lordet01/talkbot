@@ -1,0 +1,12 @@
+name = "talkbot-control-panel"
+main = "src/worker.js"
+compatibility_date = "2025-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "talkbot-control"
+database_id = "bcba63f8-d5de-4161-8a80-6430add81e62"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"

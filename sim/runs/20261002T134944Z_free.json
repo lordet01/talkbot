@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "type": "free",
+    "turns": 10,
+    "seed": "영어 공부하자"
+  },
+  "turns": [
+    {
+      "user": "영어 공부하자",
+      "assistant": "좋아, 같이 해보자!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 789
+    },
+    {
+      "user": "그러면 영어 단어를 알려줘?",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 1249
+    },
+    {
+      "user": "그러면 \"Apple\"은 뭐라고 해?",
+      "assistant": "I’m sorry, but I can’t help with that.",
+      "mode": "J-en",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 1015
+    },
+    {
+      "user": "아니 말고, \"사과\"는 뭐야?",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 947
+    },
+    {
+      "user": "Apple!",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 1,
+      "entered": false,
+      "latency_ms": 1077
+    },
+    {
+      "user": "Apple! (음~)",
+      "assistant": "음~ 맛있어 보이네!",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 2056
+    },
+    {
+      "user": "그러면 \"Apple\"은 맛있어?",
+      "assistant": "네, 맛있어요!",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 9350
+    },
+    {
+      "user": "아니 말고, \"Apple\"은 맛있어?",
+      "assistant": "네, 맛있어요!",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 5009
+    },
+    {
+      "user": "그러면 \"Apple\"은 정말 맛있어?",
+      "assistant": "네, 정말 맛있어요!",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 11464
+    },
+    {
+      "user": "그러면 Apple은 정말 맛있어?",
+      "assistant": "네, 정말 맛있어요!",
+      "mode": "C-meal",
+      "sticky": 4,
+      "entered": false,
+      "latency_ms": 2369
+    }
+  ]
+}

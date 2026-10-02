@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "type": "free",
+    "turns": 8,
+    "seed": "영어 공부하자"
+  },
+  "turns": [
+    {
+      "user": "영어 공부하자",
+      "assistant": "좋아!",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 4328
+    },
+    {
+      "user": "인형 디노야, 이제 뭐해?",
+      "assistant": "디노는 부드럽게 꼬리를 흔들며 네 옆에서 놀고 있어!",
+      "mode": "J-en",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 626
+    },
+    {
+      "user": "아니 말고, 디노랑 더 놀아도 돼?",
+      "assistant": "디노랑 더 놀아도 돼! 같이 숨바꼭질 할까?",
+      "mode": "J-en",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 4750
+    },
+    {
+      "user": "숨바꼭질하자, 디노!",
+      "assistant": "숨바꼭질 시작! 디노가 숨을 곳을 찾아볼게!",
+      "mode": "J-en",
+      "sticky": 1,
+      "entered": false,
+      "latency_ms": 4243
+    },
+    {
+      "user": "디노 숨바꼭질 끝!디노 숨바꼭질 끝!",
+      "assistant": "디노가 찾았어!",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 6595
+    },
+    {
+      "user": "아니 말고, 디노가 찾았어!",
+      "assistant": "디노가 찾았어! 좋아!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 2825
+    },
+    {
+      "user": "디노가 찾았어! 좋아!",
+      "assistant": "디노는 기뻐하며 꼬리를 흔들어!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 4581
+    },
+    {
+      "user": "아니 말고, 디노가 기뻐해!",
+      "assistant": "디노는 꼬리를 흔들며 기뻐해!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 8116
+    }
+  ]
+}

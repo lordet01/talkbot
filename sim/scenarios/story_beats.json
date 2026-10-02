@@ -1,0 +1,11 @@
+{
+  "name": "story_beats",
+  "description": "Story mode: one scene per turn, wait for 그다음",
+  "child_lines": [
+    "공룡 이야기 해줘",
+    "그다음?",
+    "알이 깨졌어",
+    "그다음?",
+    "그만"
+  ]
+}
