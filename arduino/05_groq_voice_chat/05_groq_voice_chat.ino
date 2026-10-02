@@ -147,7 +147,7 @@ static const char* SYSTEM_PROMPT =
     "기본은 한국어. 영어·중국어 놀이일 때만 짧은 외국어 허용. "
     "Sorry·I forgot 같은 영어 문장으로 사과하거나 설명하지 마. "
     "마크다운·긴 영어 설명·이모지·따옴표·물음표만 있는 꼬리 금지. "
-    "이모지·괄호 속 지시문·영어 메타 설명은 절대 붙이지 마. "
+    "이모지·괄호 속 지시문·영어 메타 설명·물결표(~)·별표·특수기호는 절대 붙이지 마. "
     "같은 말·감탄을 두 번 붙이지 마. '좋아!좋아!' 금지. "
     "웃을 땐 '하하' '히히', 감탄은 '와' '우와' '음'처럼 입으로 낼 말로. "
     "감탄사만 보내지 마. 바로 본론. "
@@ -1892,7 +1892,8 @@ static void replace_all_ci(String& s, const char* from, const char* to) {
   }
 }
 
-// Collapse runs of ㅋ/ㅎ into a speakable laugh, and map emoji → vocal SFX.
+// Collapse runs of ㅋ/ㅎ into a speakable laugh, and map emoji/symbols → vocal SFX.
+// Never leave glyphs Chirp3 would read aloud (물결표, 별표, …).
 String vocalize_for_tts(const String& text) {
   String s = text;
 
@@ -1904,14 +1905,38 @@ String vocalize_for_tts(const String& text) {
       {"❤️", " "},        {"💕", " "},        {"💖", " "},      {"💗", " "},
       {"😢", " 흑 "},     {"😭", " 흑흑 "},   {"😔", " 음 "},   {"😞", " 음 "},
       {"😮", " 어? "},    {"😯", " 어? "},    {"😲", " 우와 "}, {"🤩", " 우와 "},
-      {"🤔", " 음… "},    {"😴", " 쿨쿨 "},   {"💤", " 쿨쿨 "}, {"🔥", " "},
+      {"🤔", " 음 "},     {"😴", " 쿨쿨 "},   {"💤", " 쿨쿨 "}, {"🔥", " "},
       {"⭐", " "},        {"✨", " "},        {"🎉", " 예이 "}, {"👏", " 짝짝 "},
       {"👍", " "},        {"👎", " "},
+      {"♡", " 헤헤 "},    {"♥", " 헤헤 "},    {"♪", " 랄라 "},  {"♫", " 랄라 "},
+      {"★", " "},        {"☆", " "},
+      // Stage directions in paren → spoken affect (then strip remaining brackets later).
+      {"(웃음)", " 하하 "}, {"(웃)", " 하하 "}, {"(히히)", " 히히 "},
+      {"(울음)", " 흑 "}, {"(울)", " 흑 "}, {"(감탄)", " 우와 "},
       {nullptr, nullptr},
   };
   for (int i = 0; pairs[i][0]; i++) {
     s.replace(pairs[i][0], pairs[i][1]);
   }
+
+  // Chat emoticons / tears (before dropping ^ _ etc.).
+  static const char* emo_from[] = {
+      "^_^", "^-^", "^^", "ㅠㅠ", "ㅜㅜ", "ㅠㅜ", "ㅜㅠ", "ㅡㅡ", "T_T", "t_t",
+      nullptr,
+  };
+  static const char* emo_to[] = {
+      " 히히 ", " 히히 ", " 히히 ", " 흑흑 ", " 흑흑 ", " 흑 ", " 흑 ", " 흥 ", " 흑 ", " 흑 ",
+  };
+  for (int i = 0; emo_from[i]; i++) {
+    while (s.indexOf(emo_from[i]) >= 0) s.replace(emo_from[i], emo_to[i]);
+  }
+
+  // Tildes / wave dashes — TTS reads these as "물결표". Soften → drop (cute trailing tone).
+  // Also fullwidth ～ (EF BC 9E), wave 〜 (E3 80 9C), tilde operator ∼ (E2 88 BC).
+  while (s.indexOf('~') >= 0) s.replace("~", "");
+  s.replace("\xEF\xBC\x9E", "");  // ～
+  s.replace("\xE3\x80\x9C", "");  // 〜
+  s.replace("\xE2\x88\xBC", "");  // ∼
 
   // Text laughs / chat slang → spoken onomatopoeia (not "ㅋ" spelled out).
   // Longest first.
@@ -1929,7 +1954,6 @@ String vocalize_for_tts(const String& text) {
       " 하하하 ", " 하하하 ", " 하하 ", " 히히 ", " 히히 ", " 하하 ", " 하하하 ", " 하하 ",
   };
   for (int i = 0; laughs_from[i]; i++) {
-    // Korean exact
     while (s.indexOf(laughs_from[i]) >= 0) {
       s.replace(laughs_from[i], laughs_to[i]);
     }
@@ -1940,7 +1964,7 @@ String vocalize_for_tts(const String& text) {
   replace_all_ci(s, "lol", " 하하 ");
   replace_all_ci(s, "lmao", " 하하하 ");
 
-  // Drop leftover emoji / symbols (UTF-8 4-byte mostly; also misc pictographs).
+  // Drop leftover emoji / decorative symbols. Keep letters, Hangul, and prosody .!?,'-
   String out;
   out.reserve(s.length());
   for (size_t i = 0; i < s.length();) {
@@ -1952,15 +1976,47 @@ String vocalize_for_tts(const String& text) {
     if (i + n > s.length()) break;
 
     bool drop = false;
-    if (n == 4) {
-      // Almost all 4-byte UTF-8 here are emoji / rare symbols — don't speak them.
-      drop = true;
+    if (n == 1) {
+      // Decorative ASCII — never speak name of mark.
+      if (c == '`' || c == '^' || c == '*' || c == '_' || c == '#' || c == '@' ||
+          c == '$' || c == '%' || c == '&' || c == '|' || c == '\\' || c == '/' ||
+          c == '=' || c == '+' || c == '<' || c == '>' || c == '[' || c == ']' ||
+          c == '{' || c == '}' || c == '(' || c == ')' || c == '"' || c == ';' ||
+          c == ':' || c == '~') {
+        drop = true;
+      }
+    } else if (n == 4) {
+      drop = true;  // emoji / rare symbols
     } else if (n == 3) {
-      // Misc symbols / dingbats often 0xE2xxxx (≠ Hangul which is EA–ED)
       uint8_t b1 = (uint8_t)s[i + 1];
-      if (c == 0xE2 && (b1 == 0x9C || b1 == 0x9D || b1 == 0xAD || b1 == 0x80 ||
-                        b1 == 0x9A || b1 == 0x98 || b1 == 0x99)) {
-        drop = true;  // ✓ ✗ ✨ etc.
+      uint8_t b2 = (uint8_t)s[i + 2];
+      // General punctuation / dingbats (E2…), CJK symbols (E3 80 xx except ideographs),
+      // fullwidth punct often EF BC / EF BD.
+      if (c == 0xE2) {
+        drop = true;  // … — • ✓ ✗ ♪ etc. (ellipsis handled earlier as ", ")
+      } else if (c == 0xE3 && b1 == 0x80) {
+        // Ideographic space/punct: 、。〈〉《》「」『』〜 etc.
+        if (!(b2 == 0x81 || b2 == 0x82)) drop = true;  // keep 、。 as soft pause below
+        if (b2 == 0x81 || b2 == 0x82) {
+          // map to ASCII pause instead of raw
+          out += ", ";
+          i += n;
+          continue;
+        }
+      } else if (c == 0xEF && (b1 == 0xBC || b1 == 0xBD)) {
+        // Fullwidth ASCII block — drop decorative; keep fullwidth !?． if useful
+        // EF BC 81=！ EF BC 9F=？ EF BC 8E=． EF BC 8C=，
+        if (b1 == 0xBC && (b2 == 0x81 || b2 == 0x9F)) {
+          out += (b2 == 0x81) ? '!' : '?';
+          i += n;
+          continue;
+        }
+        if (b1 == 0xBC && (b2 == 0x8E || b2 == 0x8C)) {
+          out += (b2 == 0x8E) ? '.' : ',';
+          i += n;
+          continue;
+        }
+        drop = true;
       }
     }
 
@@ -1987,6 +2043,11 @@ String sanitize_tts_text(const String& text) {
   while (out.indexOf("??") >= 0) out.replace("??", "?");
   while (out.indexOf("…") >= 0) out.replace("…", ", ");
   while (out.indexOf("...") >= 0) out.replace("...", ", ");
+  // Any leftover wave/tilde variants
+  while (out.indexOf('~') >= 0) out.replace("~", "");
+  out.replace("\xEF\xBC\x9E", "");
+  out.replace("\xE3\x80\x9C", "");
+  out.replace("\xE2\x88\xBC", "");
   while (out.indexOf("  ") >= 0) out.replace("  ", " ");
   out.trim();
   // Empty / punct-only → caller skips TTS (don't speak lone "?" or emoji tails).
