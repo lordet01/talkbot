@@ -509,7 +509,7 @@ TTS·발음 품질이 부족하면 **단어 수·길이 더 짧게**. 틀린 성
 | sticky | 진입 후 약 4턴 유지, 강한 신호면 즉시 전환 |
 | 모드 오버레이 | 시스템 프롬프트에 짧은 모드 규칙 append |
 | Z 캔드 | 위험·개인정보 키워드 → LLM 생략, 고정 거절 문장 |
-| J/K TTS | `en-US` / `cmn-CN` Chirp3 시도, 실패 시 ko-KR 폴백 |
+| J/K TTS | 모드와 무관하게 기기 설정 보이스(ko-KR Chirp3) 고정 |
 | max_tokens·temperature | 모드별 소폭 조정 |
 
 시리얼: `mode: A-play → J-en`, `mode: active=J-en sticky=4` 등으로 확인.  

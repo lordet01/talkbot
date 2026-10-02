@@ -85,9 +85,14 @@ static const float NOISE_FLOOR_MIN = 0.0035f;
 static const float NOISE_FLOOR_MAX = 0.038f;
 static const float NOISE_EMA_FAST = 0.12f;
 static const float NOISE_EMA_SLOW = 0.03f;
-static const uint32_t SILENCE_MS_SHORT = 250;
-static const uint32_t SILENCE_MS_LONG = 320;
-static const uint32_t SILENCE_ADAPT_AFTER_MS = 900;
+static const uint32_t SILENCE_MS_SHORT = 200;
+static const uint32_t SILENCE_MS_LONG = 260;
+static const uint32_t SILENCE_ADAPT_AFTER_MS = 700;
+// Ignore brief RMS spikes while already in silence (keyboard / AC blips).
+static const uint32_t SILENCE_BLIP_IGNORE_MS = 80;
+// If TTFT is slow, play a short filler; never block POST→SSE on opener.
+// Typical TTFT is ~500–600ms — defer past that so normal turns skip entirely.
+static const uint32_t OPENER_DEFER_MS = 700;
 static const uint32_t MAX_WAIT_SPEECH_MS = 5000;
 static const size_t VAD_START_SAMPLES = 640;
 static const size_t VAD_END_SAMPLES = 320;
@@ -124,9 +129,11 @@ static const char* SYSTEM_PROMPT =
     "상대는 어린이 한 명뿐이야. 보호자·다른 사람·여러 아이를 가정하지 마. "
     // Context fidelity — follow the thread
     "직전 대화(히스토리)를 반드시 이어서 답해. 아이가 방금 말한 것과 바로 앞 네 말을 한 줄기로 봐. "
-    "아이가 '아니' '말고' '그게 아니라'로 고치면, 고친 뜻으로 바로 답해. 새 주제를 꺼내지 마. "
+    "아이가 '아니' '말고' '그게 아니라' '잖아'로 고치면, 고친 뜻으로 바로 답해. 새 주제를 꺼내지 마. "
     "질문이 오면 먼저 짧게 답하고, 질문을 되묻거나 다른 이야기로 새지 마. "
-    "듣지 않은 일·같이 안 한 경험을 꾸며내지 마. 애매할 때만 한 번 짧게 되물어. "
+    "듣지 않은 일·같이 안 한 경험을 꾸며내지 마. "
+    "말이 이상하거나 알아듣기 어려우면 되풀이하지 말고 '응?' 또는 '뭐라고?' 한 마디만. "
+    "애매할 때만 한 번 짧게 되물어. "
     // Turn rhythm (toy doll conversation)
     "이 대화는 장난감 인형과 아이의 말장난이야. 한 턴에 한 박만 해. "
     "아이 말이 짧으면 너도 짧게. 아이가 한 마디면 너도 한 마디가 기본이야. "
@@ -416,13 +423,19 @@ float vad_onset_threshold() {
 }
 
 float vad_end_threshold() {
-  // End sooner after loud speech: silence = below max(noise×SNR, onset×0.22).
+  // Silence = below max(noise×SNR, peak×ratio). Ratio must be high enough that
+  // post-speech ambient (~0.02–0.03) counts as silence — low ratio caused 5s max.
   float t = noise_floor_rms * VAD_END_SNR;
-  float floor = VAD_ABS_MIN * 0.75f;
+  float floor = 0.012f;
   if (t < floor) t = floor;
   if (last_onset_peak_rms > 0.0f) {
-    float relative = last_onset_peak_rms * 0.22f;
+    float relative = last_onset_peak_rms * 0.42f;
+    // Quiet-but-real speech (onset ~0.055): keep end_th above typical ambient.
+    if (last_onset_peak_rms >= 0.050f && relative < 0.028f) relative = 0.028f;
     if (relative > t) t = relative;
+    // Don't treat ongoing speech as silence.
+    float cap = last_onset_peak_rms * 0.55f;
+    if (t > cap) t = cap;
   }
   return t;
 }
@@ -764,7 +777,10 @@ bool record_utterance() {
   float calib_min = 1.0f;
   size_t calib_n = 0;
   uint32_t silence_start = 0;
+  uint32_t noise_blip_start = 0;
   uint32_t wait_start = millis();
+  uint32_t last_vad_log_ms = 0;
+  float last_rms = 0.0f;
 
   while (record_count < MAX_SAMPLES) {
     // Serial typing (KOTEST) must not be picked up as speech by the mic.
@@ -777,6 +793,7 @@ bool record_utterance() {
         started = false;
         record_count = 0;
         silence_start = 0;
+        noise_blip_start = 0;
         Serial.println("listen: cancelled (serial typing)");
       }
       if (state != STATE_LISTEN) {
@@ -813,8 +830,8 @@ bool record_utterance() {
         }
         calibrated = true;
         record_count = 0;
-        Serial.printf("listen: noise floor=%.4f onset=%.4f\n",
-                      noise_floor_rms, vad_onset_threshold());
+        Serial.printf("listen: noise floor=%.4f onset=%.4f end_th=%.4f\n",
+                      noise_floor_rms, vad_onset_threshold(), vad_end_threshold());
         wait_start = millis();
       }
       continue;
@@ -825,6 +842,7 @@ bool record_utterance() {
     const int16_t* chunk = record_buf + record_count - check_len;
     float rms = sample_rms(chunk, check_len);
     float zcr = sample_zcr(chunk, check_len);
+    last_rms = rms;
 
     if (!started) {
       bool speechish = window_looks_like_speech(rms, zcr);
@@ -841,9 +859,10 @@ bool record_utterance() {
           }
           started = true;
           silence_start = 0;
+          noise_blip_start = 0;
           last_onset_peak_rms = onset_peak_rms;
-          Serial.printf("listen: voice detected (rms=%.3f peak=%.3f zcr=%.2f)\n",
-                        rms, onset_peak_rms, zcr);
+          Serial.printf("listen: voice detected (rms=%.3f peak=%.3f zcr=%.2f end_th=%.3f)\n",
+                        rms, onset_peak_rms, zcr, vad_end_threshold());
           // Force-refresh stale sockets — zombie connected() skipped preconnect before.
           request_tls_refresh();
           request_tts_refresh();
@@ -867,7 +886,22 @@ bool record_utterance() {
       }
     }
 
-    if (rms < vad_end_threshold()) {
+    // Track running peak so end_th rises with louder syllables.
+    if (started && rms > last_onset_peak_rms) {
+      last_onset_peak_rms = rms;
+    }
+
+    float end_th = vad_end_threshold();
+    if (started && millis() - last_vad_log_ms >= 400) {
+      last_vad_log_ms = millis();
+      uint32_t sil_ms = silence_start ? (millis() - silence_start) : 0;
+      Serial.printf("listen: vad rms=%.3f end_th=%.3f peak=%.3f silence=%ums rec=%.1fs\n",
+                    rms, end_th, last_onset_peak_rms, (unsigned)sil_ms,
+                    record_count / (float)SAMPLE_RATE);
+    }
+
+    if (rms < end_th) {
+      noise_blip_start = 0;
       if (silence_start == 0) silence_start = millis();
       uint32_t silence_elapsed = millis() - silence_start;
       uint32_t speech_ms = (uint32_t)(record_count * 1000UL / SAMPLE_RATE);
@@ -881,13 +915,29 @@ bool record_utterance() {
         if (tail_have > tail_keep && record_count > tail_have - tail_keep) {
           record_count -= (tail_have - tail_keep);
         }
-        Serial.printf("listen: end (%0.1fs, silence=%ums)\n",
-                      record_count / (float)SAMPLE_RATE, (unsigned)silence_needed);
+        Serial.printf("listen: end (%0.1fs, silence=%ums rms=%.3f end_th=%.3f peak=%.3f)\n",
+                      record_count / (float)SAMPLE_RATE, (unsigned)silence_needed,
+                      rms, end_th, last_onset_peak_rms);
         break;
+      }
+    } else if (silence_start != 0) {
+      // Already in silence — ignore brief spikes so ambient blips don't reset.
+      if (noise_blip_start == 0) noise_blip_start = millis();
+      else if (millis() - noise_blip_start >= SILENCE_BLIP_IGNORE_MS) {
+        silence_start = 0;
+        noise_blip_start = 0;
       }
     } else {
       silence_start = 0;
+      noise_blip_start = 0;
     }
+  }
+
+  if (record_count >= MAX_SAMPLES) {
+    uint32_t sil_ms = silence_start ? (millis() - silence_start) : 0;
+    Serial.printf("listen: end max (%.1fs) rms=%.3f end_th=%.3f peak=%.3f silence=%ums\n",
+                  record_count / (float)SAMPLE_RATE, last_rms, vad_end_threshold(),
+                  last_onset_peak_rms, (unsigned)sil_ms);
   }
 
   i2s.end();
@@ -1574,6 +1624,12 @@ bool groq_chat(const String& user_text, String& reply) {
     shot("assistant", "Boat!");
     shot("user", "아니 과일");
     shot("assistant", "Pear!");
+    shot("user", "Apple");
+    shot("assistant", "맞아! Apple!");
+    shot("user", "How to pronounce apple in Korean?");
+    shot("assistant", "사과!");
+    shot("user", "사과잖아 사과");
+    shot("assistant", "Apple!");
   } else if (g_chat_mode.mode == MODE_ZH) {
     JsonObject u1 = messages.add<JsonObject>();
     u1["role"] = "user";
@@ -1612,9 +1668,10 @@ bool groq_chat(const String& user_text, String& reply) {
   secure_client->print(body);
   uint32_t t_req_sent = millis();
 
-  // Warm TTS while waiting for LLM headers/tokens; play local opener for instant feedback.
+  // Warm TTS while waiting for LLM headers/tokens. Do NOT block on opener —
+  // previous path played "음!" then soft-stopped I2S, delaying TTFT read + TTS.
   request_tts_preconnect();
-  play_opener_clip();
+  Serial.printf("opener: deferred (play if TTFT > %ums)\n", (unsigned)OPENER_DEFER_MS);
 
   // Parse status + headers (don't buffer body — it's SSE).
   String status_line = secure_client->readStringUntil('\n');
@@ -1645,6 +1702,7 @@ bool groq_chat(const String& user_text, String& reply) {
       if (lower.indexOf("close") >= 0) keep_alive = false;
     }
   }
+  Serial.printf("llm: headers in %ums (HTTP %d)\n", (unsigned)(millis() - t_req_sent), status);
 
   if (status != 200) {
     Serial.printf("ERR: LLM HTTP %d\n", status);
@@ -1671,6 +1729,8 @@ bool groq_chat(const String& user_text, String& reply) {
   bool spoke_any = false;
   uint32_t t_first_tok = 0;
   uint32_t t_start = t_req_sent;
+  bool opener_played = false;
+  uint32_t opener_ms = 0;
 
   speak_session_begin();
 
@@ -1685,6 +1745,17 @@ bool groq_chat(const String& user_text, String& reply) {
     if (n <= 0) {
       if (br.done) break;
       if (millis() - idle_start > 15000) break;
+      // Slow TTFT: short chirp only (not full opener + soft-stop before tokens).
+      if (!opener_played && t_first_tok == 0 &&
+          millis() - t_start >= OPENER_DEFER_MS) {
+        opener_played = true;
+        uint32_t t_op = millis();
+        Serial.println("opener: late filler (TTFT slow)");
+        play_filler_chirp();
+        opener_ms = millis() - t_op;
+        Serial.printf("opener: filler done in %ums\n", (unsigned)opener_ms);
+        idle_start = millis();
+      }
       delay(1);
       continue;
     }
@@ -1700,7 +1771,9 @@ bool groq_chat(const String& user_text, String& reply) {
           if (delta.length() > 0) {
             if (t_first_tok == 0) {
               t_first_tok = millis() - t_start;
-              Serial.printf("llm: first token in %ums (from POST)\n", (unsigned)t_first_tok);
+              Serial.printf("llm: first token in %ums (from POST, opener=%s)\n",
+                            (unsigned)t_first_tok,
+                            opener_played ? "played" : "skipped");
             }
             full += delta;
             pending += delta;
@@ -1746,8 +1819,9 @@ bool groq_chat(const String& user_text, String& reply) {
     return false;
   }
   append_chat_message("assistant", reply.c_str());
-  Serial.printf("llm: %s (spoke=%d, %ums)\n", reply.c_str(), spoke_any ? 1 : 0,
-                (unsigned)(millis() - t_start));
+  Serial.printf("llm: %s (spoke=%d, %ums, ttft=%ums opener_ms=%u)\n", reply.c_str(),
+                spoke_any ? 1 : 0, (unsigned)(millis() - t_start),
+                (unsigned)t_first_tok, (unsigned)opener_ms);
   return true;
 }
 
@@ -3149,11 +3223,13 @@ void play_filler_chirp() {
 
 bool run_pipeline_inner() {
   set_state(STATE_PROCESS, "pipeline start");
+  uint32_t t_pipe = millis();
   Serial.printf("pipe: recorded %.2fs (%u samples)\n",
                 record_count / (float)SAMPLE_RATE, (unsigned)record_count);
 
   uint8_t* wav = nullptr;
   size_t wav_len = 0;
+  uint32_t t_wav = millis();
   if (!build_ulaw_wav(&wav, &wav_len)) {
     size_t pcm_bytes = record_count * sizeof(int16_t);
     wav_len = 44 + pcm_bytes;
@@ -3167,8 +3243,9 @@ bool run_pipeline_inner() {
     memcpy(wav + 44, record_buf, pcm_bytes);
     Serial.println("stt: upload PCM16 (ulaw build failed)");
   } else {
-    Serial.printf("stt: upload μ-law wav %u bytes (pcm would be %u)\n",
-                  (unsigned)wav_len, (unsigned)(44 + record_count * 2));
+    Serial.printf("stt: upload μ-law wav %u bytes (pcm would be %u) build=%ums\n",
+                  (unsigned)wav_len, (unsigned)(44 + record_count * 2),
+                  (unsigned)(millis() - t_wav));
   }
 
   String transcript;
@@ -3188,7 +3265,7 @@ bool run_pipeline_inner() {
   }
   Serial.printf("pipe: STT ok in %ums -> \"%s\"\n", (unsigned)stt_ms, transcript.c_str());
 
-  // Opener plays inside groq_chat right after POST (overlaps LLM TTFT).
+  // Opener (if any) plays inside groq_chat only when TTFT is slow.
   String reply;
   uint32_t t_llm = millis();
   Serial.println("pipe: LLM+TTS …");
@@ -3197,8 +3274,10 @@ bool run_pipeline_inner() {
     speak_session_end();
     return false;
   }
-  Serial.printf("pipe: turn done stt=%ums llm+tts=%ums reply=\"%s\"\n", (unsigned)stt_ms,
-                (unsigned)(millis() - t_llm), reply.c_str());
+  uint32_t llm_tts_ms = millis() - t_llm;
+  Serial.printf("pipe: turn done stt=%ums llm+tts=%ums total=%ums reply=\"%s\"\n",
+                (unsigned)stt_ms, (unsigned)llm_tts_ms,
+                (unsigned)(millis() - t_pipe), reply.c_str());
 
   end_turn_cleanup();
   return true;

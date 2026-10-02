@@ -86,8 +86,10 @@ static const char* const kSleep[] = {
     "good night", nullptr};
 
 static const char* const kMeal[] = {
-    "밥", "배고파", "배고프", "먹자", "먹을래", "간식", "과자", "아침",
-    "점심", "저녁", "맛있", "배불러", "다 먹", nullptr};
+    // Avoid bare 아침/점심/저녁 — "좋은 아침" is a greeting, not meal play.
+    "밥", "배고파", "배고프", "먹자", "먹을래", "간식", "과자",
+    "아침 먹", "아침밥", "점심 먹", "저녁 먹", "맛있", "배불러", "다 먹",
+    nullptr};
 
 static const char* const kHygiene[] = {
     "손 씻", "손씻", "양치", "화장실", "목욕", "샤워", "잠옷", "갈아입",
@@ -95,7 +97,8 @@ static const char* const kHygiene[] = {
 
 static const char* const kDay[] = {
     "안녕", "안녕하세요", "일어났어", "유치원", "어린이집",
-    "다녀왔", "다녀오", "잘 잤", "잘잤", nullptr};
+    "다녀왔", "다녀오", "잘 잤", "잘잤",
+    "좋은 아침", "좋은아침", "굿모닝", "good morning", nullptr};
 
 static const char* const kStory[] = {
     "이야기", "동화", "얘기 해", "이야기 해", "스토리", nullptr};
@@ -252,14 +255,13 @@ inline const char* chat_mode_overlay(ChatMode m) {
     case MODE_HANGUL:
       return " [지금: 한글 말놀이] 짧은 단어·따라 말하기. 문법 강의 금지.";
     case MODE_EN:
-      return " [지금: 영어 놀이] 아이가 무슨 단어를 묻든 영어 단어(또는 아주 짧은 구)만 답해. "
-             "사전을 외운 게 아니라, 방금 대화의 뜻을 보고 그 단어의 영어를 말해. "
-             "'X는 영어로?' '그러면 X는?' 'X는?' 은 같은 질문이다. 설명하지 말고 영어만. "
-             "단어가 없이 '영어로 뭐야?'만 오면 추측하지 말고 반드시 '어떤 거?' 만. "
-             "동음이의어·고침: 아이가 '아니' '말고' '과일'이라고 하면, "
-             "새 단어를 묻은 게 아니라 직전 답을 고치는 것이다. 고친 뜻의 영어 단어만 다시 말해. "
-             "배+과일 고침은 항상 Pear! 이다. 이미 Pear였어도 Boat로 뒤집지 마. "
-             "한국어 정의·새 질문·What? 금지.";
+      return " [지금: 영어 놀이] 한영 단어 놀이. 긴 설명·발음기호·괄호 금지. "
+             "한국어→영어: '사과 영어로?' → Apple! "
+             "영어→한국어: 'Apple 한국말로?' / 'pronounce in Korean' → 사과! "
+             "아이가 영어 단어만 말하면(예: Apple) 맞으면 '맞아! Apple!' 또는 짧게 'Good!' "
+             "아이가 '사과잖아'처럼 고치면 그 뜻의 영어를 다시: Apple! "
+             "'그러면 X는?'도 같은 패턴. 단어 없으면 '어떤 거?' "
+             "아이 말을 그대로 되풀이하지 마. What?/Sorry/ae-peul 금지.";
     case MODE_ZH:
       return " [지금: 중국어 놀이] 중국어 단어나 짧은 구 하나만. 긴 설명 금지. "
              "'그러면 X는?'도 단어만. 고쳐 말하면 고친 뜻으로. 예: '你好!'";
@@ -318,15 +320,10 @@ inline float chat_mode_temperature(ChatMode m) {
   }
 }
 
-// TTS language/voice for foreign-language play. nullptr = use device default (ko).
-inline void chat_mode_tts_voice(ChatMode m, const char** lang, const char** voice) {
+// Always keep the device-configured Korean Chirp3 voice (one doll = one voice).
+// Short EN/ZH play words are spoken by the same ko-KR speaker — do not swap to
+// en-US/cmn-CN voices (that sounded like a different character mid-chat).
+inline void chat_mode_tts_voice(ChatMode /*m*/, const char** lang, const char** voice) {
   *lang = nullptr;
   *voice = nullptr;
-  if (m == MODE_EN) {
-    *lang = "en-US";
-    *voice = "en-US-Chirp3-HD-Kore";
-  } else if (m == MODE_ZH) {
-    *lang = "cmn-CN";
-    *voice = "cmn-CN-Chirp3-HD-Kore";
-  }
 }

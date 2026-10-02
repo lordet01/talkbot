@@ -1,0 +1,13 @@
+{
+  "name": "device_log_apple_flow",
+  "description": "Regression from device log: greeting≠meal, EN bidirectional, no echo/romanization",
+  "child_lines": [
+    "안녕.",
+    "좋은 아침이야.",
+    "우리 영어 게임 할까?",
+    "Apple",
+    "How to pronounce apple in Korean?",
+    "사과잖아 사과",
+    "퀴즈 내려놓은"
+  ]
+}

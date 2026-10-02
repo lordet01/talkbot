@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "sim/scenarios/device_log_apple_flow.json",
+    "name": "device_log_apple_flow"
+  },
+  "turns": [
+    {
+      "user": "안녕.",
+      "assistant": "안녕!",
+      "mode": "B-day",
+      "sticky": 2,
+      "entered": true,
+      "latency_ms": 2522
+    },
+    {
+      "user": "좋은 아침이야.",
+      "assistant": "좋은 아침, 친구!",
+      "mode": "B-day",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 760
+    },
+    {
+      "user": "우리 영어 게임 할까?",
+      "assistant": "좋아! 어떤 단어부터 할까?",
+      "mode": "J-en",
+      "sticky": 4,
+      "entered": true,
+      "latency_ms": 769
+    },
+    {
+      "user": "Apple",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 3,
+      "entered": false,
+      "latency_ms": 1352
+    },
+    {
+      "user": "How to pronounce apple in Korean?",
+      "assistant": "사과!",
+      "mode": "J-en",
+      "sticky": 2,
+      "entered": false,
+      "latency_ms": 710
+    },
+    {
+      "user": "사과잖아 사과",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 1,
+      "entered": false,
+      "latency_ms": 1730
+    },
+    {
+      "user": "퀴즈 내려놓은",
+      "assistant": "어떤 퀴즈야?",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 743
+    }
+  ]
+}
