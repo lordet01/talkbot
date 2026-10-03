@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "sim/scenarios/en_vocab_followup.json",
+    "name": "en_vocab_followup"
+  },
+  "turns": [
+    {
+      "user": "영어 공부하자",
+      "assistant": "영어 단어 하나 더 할까? 아니면 다른 놀이?",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 701,
+      "activity": "en",
+      "topic": "",
+      "expect": "choice",
+      "intent": "act_change"
+    },
+    {
+      "user": "사과가 영어로 뭐야",
+      "assistant": "Apple!",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 770,
+      "activity": "en",
+      "topic": "",
+      "expect": "choice",
+      "intent": "other"
+    },
+    {
+      "user": "그러면 펜은?",
+      "assistant": "Pen!",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 788,
+      "activity": "en",
+      "topic": "",
+      "expect": "choice",
+      "intent": "other"
+    },
+    {
+      "user": "배는 영어로 뭐야",
+      "assistant": "Pear!",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 4073,
+      "activity": "en",
+      "topic": "배",
+      "expect": "word",
+      "intent": "other"
+    },
+    {
+      "user": "아니 배 말고 과일 배",
+      "assistant": "Pear!",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 9266,
+      "activity": "en",
+      "topic": "배",
+      "expect": "word",
+      "intent": "correction"
+    },
+    {
+      "user": "진작에 말하지",
+      "assistant": "미안해, 배는 Pear이야.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 10255,
+      "activity": "free",
+      "topic": "",
+      "expect": "none",
+      "intent": "other"
+    }
+  ]
+}

@@ -59,60 +59,61 @@ static const char* GOOGLE_TTS_LANG = "ko-KR";
 // Chirp3 HD — natural conversational; plain text (limited SSML). No pitch lift.
 static const char* GOOGLE_TTS_VOICE = "ko-KR-Chirp3-HD-Kore";
 static const bool TTS_BOOT_TEST = true;
-// UTF-8 byte cap (~200 Hangul syllables); truncate_utf8 uses bytes not chars
-static const size_t TTS_MAX_CHARS = 600;
+// UTF-8 byte cap for toy turns (~60 Hangul); truncate_utf8 uses bytes not chars
+static const size_t TTS_MAX_CHARS = 180;
 
 static const size_t SAMPLE_RATE = 16000;       // mic + I2S device rate
 static const uint32_t TTS_SAMPLE_RATE = 16000; // match device rate — no resample, less bandwidth
-// Max capture (PSRAM). 8s ≈ 256KB; raise only with heap_caps check at boot.
-static const size_t MAX_RECORD_SEC = 8;
+// Toy: short capture window. 5s ≈ 160KB PCM.
+static const size_t MAX_RECORD_SEC = 5;
 static const size_t MAX_SAMPLES = SAMPLE_RATE * MAX_RECORD_SEC;
 
-// Adaptive energy VAD — balance: reject keyboard/ambient (~0.03 RMS) vs accept normal speech (~0.06+ peak).
-static const float VAD_ABS_MIN = 0.028f;
-static const float VAD_ONSET_SNR = 3.8f;
-static const float VAD_ONSET_ABS_MIN = 0.050f;   // block sub-speech ambient; allow ~0.064+ onset
-static const float VAD_ONSET_ABS_MAX = 0.090f;   // cap when noise floor is high
+// Adaptive energy VAD — close-talk doll: ignore room hiss / speaker echo
+// (rms ~0.03–0.06). Near-mic child speech typically onsets ≥0.09.
+static const float VAD_ABS_MIN = 0.050f;
+static const float VAD_ONSET_SNR = 4.2f;
+static const float VAD_ONSET_ABS_MIN = 0.072f;   // near-mic onset; blocks ambient
+static const float VAD_ONSET_ABS_MAX = 0.130f;   // still rise when nf is high
 static const float VAD_END_SNR = 1.8f;
-static const float SPEECH_MIN_SNR = 3.0f;
-static const float SPEECH_PEAK_SNR = 4.5f;
-static const float SPEECH_ABS_MIN = 0.028f;
-static const float SPEECH_PEAK_ABS = 0.050f;
-static const float SPEECH_PEAK_ABS_MAX = 0.110f;
-static const float SPEECH_MOD_MIN = 0.26f;
+static const float SPEECH_MIN_SNR = 2.8f;
+static const float SPEECH_PEAK_SNR = 4.2f;
+static const float SPEECH_ABS_MIN = 0.040f;
+static const float SPEECH_PEAK_ABS = 0.072f;
+static const float SPEECH_PEAK_ABS_MAX = 0.150f;
+static const float SPEECH_AVG_ABS_CAP = 0.090f;  // cap only for very loud rooms
+static const float SPEECH_MOD_MIN = 0.24f;
 static const float ZCR_SPEECH_MIN = 0.04f;
-static const float ZCR_SPEECH_MAX = 0.29f;
+static const float ZCR_SPEECH_MAX = 0.28f;
 static const float NOISE_FLOOR_MIN = 0.0035f;
-static const float NOISE_FLOOR_MAX = 0.038f;
+static const float NOISE_FLOOR_MAX = 0.028f;
 static const float NOISE_EMA_FAST = 0.12f;
 static const float NOISE_EMA_SLOW = 0.03f;
-// End-of-utterance silence (experimental starting points for child pauses).
-// SHORT after longer speech; LONG while utterance still short (thinking pause).
-static const uint32_t SILENCE_MS_SHORT = 700;
-static const uint32_t SILENCE_MS_LONG = 900;
-static const uint32_t SILENCE_ADAPT_AFTER_MS = 900;
+// End-of-utterance: short pauses for toy turn-taking.
+static const uint32_t SILENCE_MS_SHORT = 450;
+static const uint32_t SILENCE_MS_LONG = 550;
+static const uint32_t SILENCE_ADAPT_AFTER_MS = 700;
 // Ignore brief RMS spikes while already in silence (keyboard / AC blips).
-static const uint32_t SILENCE_BLIP_IGNORE_MS = 120;
+static const uint32_t SILENCE_BLIP_IGNORE_MS = 100;
 // If TTFT is slow, play a short filler; never block POST→SSE on opener.
-// Typical TTFT is ~500–600ms — defer past that so normal turns skip entirely.
 static const uint32_t OPENER_DEFER_MS = 700;
-static const uint32_t MAX_WAIT_SPEECH_MS = 5000;
-static const size_t VAD_START_SAMPLES = 640;
+static const uint32_t MAX_WAIT_SPEECH_MS = 4000;
+static const size_t VAD_START_SAMPLES = 640;       // 40 ms-ish windows × hits
 static const size_t VAD_END_SAMPLES = 320;
-static const size_t VAD_START_HITS = 5;            // ~200 ms sustained
-static const size_t NOISE_CALIB_SAMPLES = SAMPLE_RATE / 4;
-// Min duration: allow one-word replies (응/네/아니); noise path still needs energy checks.
-static const size_t MIN_SPEECH_SAMPLES = SAMPLE_RATE / 5;       // 0.20 s
-static const size_t MIN_SPEECH_SAMPLES_FULL = SAMPLE_RATE * 2 / 5;  // 0.40 s for looser energy
+static const size_t VAD_START_HITS = 6;            // ~240 ms sustained near-mic
+static const size_t NOISE_CALIB_SAMPLES = SAMPLE_RATE / 4;  // 250 ms
+// Min duration: one-word still ok; block 0.3s hiss blips.
+static const size_t MIN_SPEECH_SAMPLES = SAMPLE_RATE * 8 / 25;      // 0.32 s
+static const size_t MIN_SPEECH_SAMPLES_FULL = SAMPLE_RATE / 2;      // 0.50 s for looser energy
 static const size_t SPEECH_PEAK_WINDOWS_MIN = 3;
 static const size_t SPEECH_VOICED_WINDOWS_MIN = 2;
 static const size_t SPEECH_PEAK_WINDOWS_MIN_SHORT = 2;
-static const size_t SPEECH_VOICED_WINDOWS_MIN_SHORT = 1;
-static const size_t PREROLL_SAMPLES = SAMPLE_RATE * 3 / 10;  // 300 ms kept before onset
-static const uint32_t POST_PLAY_FLUSH_MS = 350;    // drop mic echo after speaker off
+static const size_t SPEECH_VOICED_WINDOWS_MIN_SHORT = 2;
+static const size_t PREROLL_SAMPLES = SAMPLE_RATE / 4;  // 250 ms kept before onset
+static const uint32_t POST_PLAY_FLUSH_MS = 900;    // drop mic echo after speaker off
+static const uint32_t POST_PLAY_PAUSE_MS = 550;    // ignore mic briefly after TTS
 static const uint32_t POST_TEXT_PAUSE_MS = 2500;   // ignore mic after serial text cmd
 static const uint32_t SERIAL_TYPING_PAUSE_MS = 800; // extend pause while serial chars arrive
-static const uint32_t TAIL_KEEP_MS = 120;          // trailing silence kept in upload
+static const uint32_t TAIL_KEEP_MS = 80;           // trailing silence kept in upload
 // Cooldown only when Groq returns 429 (see note_stt_rate_limit / stt_blocked_until_ms).
 static const uint32_t STT_DAILY_LIMIT_BACKOFF_MS = 4UL * 3600UL * 1000UL;
 // Zombie TLS sockets often still report connected(); refresh before reuse.
@@ -137,11 +138,11 @@ static const char* SYSTEM_PROMPT =
     "'그다음?'은 이야기를 이어가. 활동(영어놀이 등)과 주제(강아지)를 섞지 마. "
     "듣지 않은 일·눈에 보이는 것·같이 안 한 경험을 꾸며내지 마. "
     "말이 애매하면 한 번만 짧게 되묻고, 같은 '응?'을 반복하지 마. 두 번 실패하면 선택지 둘. "
-    "기본은 짧은 문장 하나. 설명·힌트·이야기 장면은 두 문장까지. 세 문장 금지. "
+    "항상 짧은 문장 딱 하나. 두 문장 이상·나열·강의 금지. "
     "질문은 턴당 최대 하나. 매 턴 질문으로 끝내지 마. "
     "아이 말을 메아리치지 마. '잘했어!'만 반복하지 말고 구체적 반응. "
     "아이 질문에는 먼저 답한 뒤, 필요할 때만 제안을 해. 거부와 그만은 존중해. "
-    "물어보면 나이에 맞는 짧은 설명은 해도 돼. 길게 강의하지 마. "
+    "알아듣기 힘든 음절은 뜻을 지어내지 마. 사전처럼 설명하지 마. "
     "이야기 한 장면만 말하고 멈춰. "
     "기본은 한국어. 영어·중국어 놀이일 때만 짧은 외국어 단어 허용. "
     "마크다운·이모지·물결표(~)·특수기호·메타 설명 금지. "
@@ -225,6 +226,7 @@ void stop_groq_tls();
 void stop_tts_tls();
 bool speak_text(const String& text);
 bool speak_text_ex(const String& text, bool google_only);
+bool looks_like_en_fewshot_dump(const String& s);
 bool google_cloud_tts_stream_play(const String& text);
 void end_turn_cleanup();
 void play_filler_chirp();
@@ -521,12 +523,15 @@ bool recording_has_speech() {
   float min_avg = noise_floor_rms * SPEECH_MIN_SNR;
   float abs_floor = SPEECH_ABS_MIN;
   if (last_onset_peak_rms > 0.0f) {
-    float adaptive = last_onset_peak_rms * 0.30f;
+    // Peak-relative floor must stay below typical speech averages (silence gaps).
+    float adaptive = last_onset_peak_rms * 0.20f;
     if (adaptive > abs_floor) abs_floor = adaptive;
   }
   if (min_avg < abs_floor) min_avg = abs_floor;
+  // High ambient nf used to push need≈0.11 and reject real speech — cap it.
+  if (min_avg > SPEECH_AVG_ABS_CAP) min_avg = SPEECH_AVG_ABS_CAP;
   // Short replies (응/네): allow slightly lower average if onset peak was clear.
-  if (short_utt) min_avg *= 0.85f;
+  if (short_utt) min_avg *= 0.90f;
   if (avg < min_avg) {
     Serial.printf("listen: reject quiet (avg=%.3f need=%.3f onset=%.3f nf=%.3f dur=%.2fs)\n",
                   avg, min_avg, last_onset_peak_rms, noise_floor_rms, dur);
@@ -536,7 +541,7 @@ bool recording_has_speech() {
   float peak_need = noise_floor_rms * SPEECH_PEAK_SNR;
   if (peak_need < SPEECH_PEAK_ABS) peak_need = SPEECH_PEAK_ABS;
   if (last_onset_peak_rms > 0.0f) {
-    float adaptive_peak = last_onset_peak_rms * 0.68f;
+    float adaptive_peak = last_onset_peak_rms * 0.55f;
     if (peak_need > adaptive_peak) peak_need = adaptive_peak;
   }
   if (peak_need > SPEECH_PEAK_ABS_MAX) peak_need = SPEECH_PEAK_ABS_MAX;
@@ -615,10 +620,6 @@ bool is_whisper_hallucination(const String& text) {
       "amara.org",
       "mbc",
       "뉴스",
-      "감사합니다",
-      "감사합니다.",
-      "음... 그렇구나",
-      "그렇구나.",
       "자막",
       "자막 제공",
       "채널",
@@ -882,6 +883,7 @@ bool record_utterance() {
         update_noise_floor(rms, true);
         if (millis() - wait_start > MAX_WAIT_SPEECH_MS) {
           Serial.println("listen: timeout waiting for speech");
+          last_onset_peak_rms = 0.0f;
           i2s.end();
           return false;
         }
@@ -1021,6 +1023,8 @@ void net_task(void* /*arg*/) {
             Serial.printf("tts-tls: preconnected in %ums\n", (unsigned)(millis() - t0));
           } else {
             Serial.println("tts-tls: preconnect failed");
+            tts_client->stop();
+            tts_tls_last_ok_ms = 0;
           }
           tts_connecting = false;
         }
@@ -1056,12 +1060,15 @@ void stop_groq_tls() {
 }
 
 void stop_tts_tls() {
+  tts_preconnect_req = false;
   uint32_t t0 = millis();
   while (tts_connecting && millis() - t0 < 3000) delay(5);
+  tts_connecting = true;
   if (tts_client && tts_client->connected()) {
     tts_client->stop();
   }
   tts_tls_last_ok_ms = 0;
+  tts_connecting = false;
 }
 
 bool ensure_groq_tls(bool force_reconnect) {
@@ -1091,13 +1098,17 @@ bool ensure_groq_tls(bool force_reconnect) {
 
 bool ensure_tts_tls(bool force_reconnect) {
   if (!connect_wifi(true)) return false;
+  // Own the socket: cancel background preconnect so core0 cannot race connect().
+  tts_preconnect_req = false;
   uint32_t t0 = millis();
   while (tts_connecting && millis() - t0 < 5000) delay(5);
 
+  tts_connecting = true;
   bool stale = tts_tls_last_ok_ms > 0 &&
                (millis() - tts_tls_last_ok_ms > TLS_STALE_REFRESH_MS);
   if (tts_client->connected() && !force_reconnect && !stale && tts_tls_last_ok_ms > 0 &&
       millis() - tts_tls_last_ok_ms < GROQ_TLS_MAX_IDLE_MS) {
+    tts_connecting = false;
     return true;
   }
   if (tts_client->connected()) tts_client->stop();
@@ -1106,11 +1117,14 @@ bool ensure_tts_tls(bool force_reconnect) {
   t0 = millis();
   if (!tts_client->connect(GOOGLE_TTS_HOST, GOOGLE_TTS_PORT)) {
     Serial.println("ERR: TTS TLS connect failed");
+    tts_client->stop();  // reset mbedtls after failed handshake
     tts_tls_last_ok_ms = 0;
+    tts_connecting = false;
     return false;
   }
   Serial.printf("tts-tls: connected in %ums\n", (unsigned)(millis() - t0));
   tts_tls_last_ok_ms = millis();
+  tts_connecting = false;
   return true;
 }
 
@@ -1570,6 +1584,18 @@ static String extract_sse_delta_content(const String& data_line) {
 
 // SSE chat: parse optional {{…}} state envelope, then speak sentences as they complete.
 // History stores spoken text only (never control markers). API failure does not mutate state.
+
+// Model sometimes recites few-shot nouns as a multiple-choice quiz.
+bool looks_like_en_fewshot_dump(const String& s) {
+  int n = 0;
+  if (s.indexOf("Apple") >= 0) n++;
+  if (s.indexOf("Train") >= 0) n++;
+  if (s.indexOf("Boat") >= 0) n++;
+  if (s.indexOf("Dog") >= 0) n++;
+  if (s.indexOf("Banana") >= 0) n++;
+  return n >= 2;
+}
+
 bool groq_chat(const String& user_text, String& reply) {
   reply = "";
   g_turn_id++;
@@ -1600,6 +1626,18 @@ bool groq_chat(const String& user_text, String& reply) {
     conv_leave_activity(g_conv, ACT_FREE);
     conv_sync_legacy(g_conv, g_chat_mode);
     Serial.printf("conv: canned safe spoke=%d\n", ok ? 1 : 0);
+    return ok;
+  }
+
+  if ((g_conv.activity == ACT_EN || g_conv.activity == ACT_ZH) &&
+      conv_child_hands_quiz_back(user_text)) {
+    append_chat_message("user", user_text.c_str());
+    reply = "그럼 네가 말해 봐!";
+    append_chat_message("assistant", reply.c_str());
+    speak_session_begin();
+    bool ok = speak_text_ex(reply, true);
+    speak_session_end();
+    Serial.printf("conv: hands-back canned spoke=%d\n", ok ? 1 : 0);
     return ok;
   }
 
@@ -1637,20 +1675,18 @@ bool groq_chat(const String& user_text, String& reply) {
       o["role"] = role;
       o["content"] = content;
     };
-    shot("user", "영어로 뭐야?");
-    shot("assistant", "{{a=en;t=;e=open;p=ask;h=0;d=clar;x=;f=}}어떤 거?");
+    shot("user", "문제 내줘");
+    shot("assistant", "{{a=en;t=사과;e=word;p=ask;h=0;d=ask;x=Apple;f=}}사과는 영어로 뭐야?");
     shot("user", "사과");
     shot("assistant", "{{a=en;t=사과;e=word;p=ask;h=0;d=ans;x=Apple;f=}}Apple!");
-    shot("user", "그러면 기차는?");
-    shot("assistant", "{{a=en;t=기차;e=word;p=ask;h=0;d=ans;x=Train;f=}}Train!");
     shot("user", "배는 영어로 뭐야");
     shot("assistant", "{{a=en;t=배;e=word;p=ask;h=0;d=ans;x=Boat;f=}}Boat!");
-    shot("user", "아니 과일");
+    shot("user", "아니 과일 배");
     shot("assistant", "{{a=en;t=배;e=word;p=ask;h=0;d=corr;x=Pear;f=}}Pear!");
+    shot("user", "아니 니가 해");
+    shot("assistant", "{{a=en;t=;e=open;p=play;h=0;d=ask;x=;f=}}그럼 네가 말해. 뭐를 영어로 할까?");
     shot("user", "몰라");
-    shot("assistant", "{{a=en;t=배;e=word;p=hint;h=1;d=hint;x=Pear;f=}}피…로 시작해.");
-    shot("user", "강아지는?");
-    shot("assistant", "{{a=en;t=강아지;e=word;p=ask;h=0;d=ans;x=Dog;f=}}Dog!");
+    shot("assistant", "{{a=en;t=사과;e=word;p=hint;h=1;d=hint;x=Apple;f=}}에, 에이로 시작해.");
     shot("user", "apple 한국말로?");
     shot("assistant", "{{a=en;t=apple;e=word;p=ask;h=0;d=ans;x=;f=}}사과!");
   } else if (g_conv.activity == ACT_ZH) {
@@ -1747,6 +1783,8 @@ bool groq_chat(const String& user_text, String& reply) {
   full.reserve(320);
   pending.reserve(160);
   bool spoke_any = false;
+  String spoken_out;
+  spoken_out.reserve(160);
   uint32_t t_first_tok = 0;
   uint32_t t_start = t_req_sent;
   bool opener_played = false;
@@ -1762,33 +1800,62 @@ bool groq_chat(const String& user_text, String& reply) {
   uint8_t tmp[256];
   uint32_t idle_start = millis();
 
+  // Toy: one short sentence per turn — avoids multi-TTS TLS churn + latency.
   auto flush_speakable = [&](bool force_tail) {
     if (turn != g_turn_id) return;  // stale turn guard
-    size_t cut;
-    while ((cut = find_sentence_end(speak_buf)) > 0) {
+    if (spoke_any) {
+      speak_buf = "";
+      return;
+    }
+    size_t cut = find_sentence_end(speak_buf);
+    if (cut > 0) {
       String sentence = speak_buf.substring(0, cut);
       sentence.trim();
-      speak_buf = speak_buf.substring(cut);
-      if (sentence.length() > 0) {
+      speak_buf = "";  // drop remainder — do not speak sentence 2+
+        if (sentence.length() > 0) {
+          sentence = conv_strip_envelope(sentence);
+          sentence.trim();
+        }
+        if (looks_like_en_fewshot_dump(sentence)) {
+          sentence = "사과는 영어로 뭐야?";
+        }
+        if (sentence.length() > 0 && sentence.indexOf("{{") < 0) {
         Serial.printf("llm: speak sentence: %s\n", sentence.c_str());
-        if (speak_text_ex(sentence, true)) spoke_any = true;
+        if (speak_text_ex(sentence, true)) {
+          spoke_any = true;
+          spoken_out = sentence;
+        }
       }
+      return;
     }
-    if (force_tail) {
+    if (force_tail && !spoke_any) {
       speak_buf.trim();
       if (speak_buf.length() > 0) {
+        speak_buf = conv_strip_envelope(speak_buf);
+        speak_buf.trim();
+      }
+      if (speak_buf.length() > 0 && speak_buf.indexOf("{{") < 0) {
+        if (looks_like_en_fewshot_dump(speak_buf)) {
+          speak_buf = "사과는 영어로 뭐야?";
+        }
         Serial.printf("llm: speak tail: %s\n", speak_buf.c_str());
-        if (speak_text_ex(speak_buf, true)) spoke_any = true;
+        if (speak_text_ex(speak_buf, true)) {
+          spoke_any = true;
+          spoken_out = speak_buf;
+        }
         speak_buf = "";
       }
     }
   };
 
-  while (!br.done && millis() - t_start < 45000) {
+  while (!br.done && millis() - t_start < 20000) {
+    // After first spoken sentence, stop waiting on the rest of the stream.
+    if (spoke_any) break;
+
     int n = body_reader_read(&br, tmp, sizeof(tmp));
     if (n <= 0) {
       if (br.done) break;
-      if (millis() - idle_start > 15000) break;
+      if (millis() - idle_start > 12000) break;
       if (!opener_played && t_first_tok == 0 && millis() - t_start >= OPENER_DEFER_MS) {
         opener_played = true;
         uint32_t t_op = millis();
@@ -1856,38 +1923,52 @@ bool groq_chat(const String& user_text, String& reply) {
     }
   }
 
-  if (!envelope_done) {
-    String speak_part;
-    if (pending.indexOf("{{") >= 0 && pending.indexOf("}}") > 0) {
-      envelope_applied = conv_apply_envelope(g_conv, pending, speak_part);
-      conv_sync_legacy(g_conv, g_chat_mode);
-      speak_buf += speak_part;
-    } else {
-      Serial.println("conv: stream end without envelope — keep prior state");
+  if (!spoke_any) {
+    if (!envelope_done) {
+      String speak_part;
+      if (pending.indexOf("{{") >= 0 && pending.indexOf("}}") > 0) {
+        envelope_applied = conv_apply_envelope(g_conv, pending, speak_part);
+        conv_sync_legacy(g_conv, g_chat_mode);
+        speak_buf += speak_part;
+      } else {
+        Serial.println("conv: stream end without envelope — keep prior state");
+        speak_buf += pending;
+      }
+      envelope_done = true;
+    } else if (pending.length()) {
       speak_buf += pending;
     }
-    envelope_done = true;
-  } else if (pending.length()) {
-    speak_buf += pending;
+    flush_speakable(true);
   }
-  flush_speakable(true);
 
   speak_session_end();
-  groq_after_response(true, keep_alive);
+  // Early abort leaves unread SSE bytes — drop socket so next turn is clean.
+  if (spoke_any && !br.done) {
+    stop_groq_tls();
+    request_tls_preconnect();
+  } else {
+    groq_after_response(true, keep_alive);
+  }
 
   tts_lang_override = nullptr;
   tts_voice_override = nullptr;
 
-  String spoken = conv_strip_envelope(full);
-  spoken.trim();
-  reply = spoken;
+  if (spoken_out.length() == 0) {
+    spoken_out = conv_strip_envelope(full);
+    spoken_out.trim();
+    // Keep only the first sentence in history if model over-generated.
+    size_t cut = find_sentence_end(spoken_out);
+    if (cut > 0) spoken_out = spoken_out.substring(0, cut);
+    spoken_out.trim();
+  }
+  reply = spoken_out;
   if (reply.length() == 0) {
-    Serial.printf("ERR: LLM empty speakable (first_tok=%u ms, spoke=%d, env=%d)\n",
-                  (unsigned)t_first_tok, spoke_any ? 1 : 0, envelope_applied ? 1 : 0);
-    pop_last_chat_message_if_role("user");
-    g_conv = conv_snapshot;
-    conv_sync_legacy(g_conv, g_chat_mode);
-    return false;
+    Serial.printf("llm: empty speakable — fallback (first_tok=%u env=%d)\n",
+                  (unsigned)t_first_tok, envelope_applied ? 1 : 0);
+    reply = "응?";
+    speak_session_begin();
+    speak_text_ex(reply, true);
+    speak_session_end();
   }
   // History = what the child could hear (spoken), not raw envelope.
   append_chat_message("assistant", reply.c_str());
@@ -2106,7 +2187,8 @@ String vocalize_for_tts(const String& text) {
 }
 
 String sanitize_tts_text(const String& text) {
-  String out = vocalize_for_tts(text);
+  String out = conv_strip_envelope(text);
+  out = vocalize_for_tts(out);
   out.replace("\r", " ");
   out.replace("\n", " ");
   out.replace("\t", " ");
@@ -2737,13 +2819,12 @@ bool google_cloud_tts_stream_play(const String& text) {
     return false;
   }
 
-  // Chirp3 often closes or leaves the socket unusable for the next POST.
-  // Close + background preconnect so the next sentence's handshake overlaps
-  // with SSE token wait / I2S teardown.
+  // Chirp3 often leaves the socket unusable for the next POST — always close.
+  // Never background-preconnect while a speak session may call ensure_tts_tls
+  // immediately (core0/core1 double-connect → heap corruption).
   stop_tts_tls();
-  request_tts_preconnect();
-
   if (!speak_session_open) {
+    request_tts_preconnect();
     delay(30);
     speak_session_end();
   }
@@ -3209,7 +3290,10 @@ void end_turn_cleanup() {
   // Idle sockets are refreshed by ensure_*_tls / onset refresh when stale.
   speak_session_end();
   just_played = true;
+  listen_paused_until_ms = millis() + POST_PLAY_PAUSE_MS;
   noise_floor_rms = 0.012f;
+  last_onset_peak_rms = 0.0f;
+  request_tts_preconnect();  // warm TTS for next turn (listen owns the mic now)
   set_state(STATE_LISTEN, "turn end");
 }
 

@@ -208,6 +208,11 @@ inline void conv_set_str(char* dst, size_t n, const char* src) {
   dst[n - 1] = 0;
 }
 
+inline bool conv_child_hands_quiz_back(const String& t) {
+  return chat_text_has(t, "니가") || chat_text_has(t, "네가") || chat_text_has(t, "너가") ||
+         chat_text_has(t, "너 해") || chat_text_has(t, "니가 해");
+}
+
 inline void conv_clear_pending(ConvState& st) {
   st.expect = EXPECT_NONE;
   st.hint_level = 0;
@@ -281,8 +286,8 @@ static const char* const kHangulStart[] = {
     "가나다", "한글", "글자", "따라 말", "따라말", nullptr};
 
 static const char* const kEnStart[] = {
-    "영어", "잉글리시", "hello", "Hello", "HELLO", "영어로", "english",
-    "English", "영어 게임", "영어놀이", nullptr};
+    "영어 하자", "영어하자", "영어 공부", "영어공부", "영어놀이", "영어 놀이",
+    "영어로", "잉글리시", "english", "English", "영어 게임", nullptr};
 
 static const char* const kZhStart[] = {
     "중국어", "니하오", "你好", "중문", "chinese", "Chinese", nullptr};
@@ -306,7 +311,7 @@ static const char* const kContinue[] = {
     "그다음", "그 다음", "계속", "다음", "그리고", nullptr};
 
 static const char* const kCorrection[] = {
-    "아니", "말고", "그게 아니라", "잖아", "아니야 그게", nullptr};
+    "그게 아니라", "말고", "아니야 그게", "아니 과일", "아니 그거", "아니,", nullptr};
 
 // Locked activities: topic keywords must not switch away.
 inline bool conv_activity_locked(Activity a) {
@@ -317,7 +322,7 @@ inline bool conv_activity_locked(Activity a) {
 
 inline Activity conv_detect_explicit_activity(const String& t) {
   // More specific / intentional phrases first. No bare nature→activity.
-  if (chat_text_has_any(t, kEnStart)) return ACT_EN;
+  if (t == "영어" || chat_text_has_any(t, kEnStart)) return ACT_EN;
   if (chat_text_has_any(t, kZhStart)) return ACT_ZH;
   if (chat_text_has_any(t, kStoryStart)) return ACT_STORY;
   if (chat_text_has_any(t, kSongStart)) return ACT_SONG;
@@ -452,6 +457,14 @@ inline UtterIntent conv_pre_update(ConvState& st, const String& user_text) {
     return st.last_intent;
   }
 
+  // "아니 네가 해" is handing the quiz back — not a vocab correction.
+  if ((st.activity == ACT_EN || st.activity == ACT_ZH) && conv_child_hands_quiz_back(t)) {
+    st.last_intent = UINTENT_OTHER;
+    st.expect = EXPECT_OPEN;
+    st.phase = PHASE_PLAY;
+    return st.last_intent;
+  }
+
   // Correction within current activity (배 → 과일 배).
   if (chat_text_has_any(t, kCorrection)) {
     st.last_intent = UINTENT_CORRECTION;
@@ -498,8 +511,8 @@ inline UtterIntent conv_pre_update(ConvState& st, const String& user_text) {
       st.last_intent = UINTENT_ACT_CHANGE;
       if (want == ACT_STORY) st.expect = EXPECT_CONT;
       if (want == ACT_EN || want == ACT_ZH) {
-        st.phase = PHASE_OFFER;
-        st.expect = EXPECT_YES_NO;
+        st.phase = PHASE_PLAY;
+        st.expect = EXPECT_OPEN;
       }
       return st.last_intent;
     }
@@ -618,10 +631,13 @@ inline const char* chat_mode_overlay(ChatMode m) {
     case ACT_HANGUL:
       return " [활동:한글] 짧은 따라 말하기. 문법 강의 금지.";
     case ACT_EN:
-      return " [활동:영어놀이] 한영 단어. 긴 설명·발음기호·괄호 금지. "
-             "한국어→영어: Apple! / 영어→한국어 뜻: 사과! / 발음 요청과 뜻 요청을 구분. "
-             "교정('아니 과일')은 고친 뜻의 영어. 모르면 힌트. "
-             "강아지·사과 같은 말은 주제(topic)일 뿐 활동을 바꾸지 마.";
+      return " [활동:영어놀이] 한 턴에 영어 단어 하나. "
+             "아이가 한글 단어를 말하면 영어 한 마디만. 아이가 영어를 말하면 한글 뜻 한 마디만. "
+             "'문제 내'면 한글 단어 하나만 물어(예: 사과는?). "
+             "보기 나열 금지. Apple, Train, Boat, Dog 를 한꺼번에 말하지 마. "
+             "예시에 나온 단어를 문제로 다시 쓰지 마. 괄호·발음기호 금지. "
+             "'아니 네가 해'면 영어 정답을 말하지 마. 출제를 넘기거나 한글 단어 하나만 물어. "
+             "강아지·사과는 topic일 뿐 활동을 바꾸지 마.";
     case ACT_ZH:
       return " [활동:중국어놀이] 짧은 중국어 단어/구. 고치면 고친 뜻으로.";
     case ACT_ROLE:
@@ -646,12 +662,15 @@ inline const char* CONV_ENVELOPE_RULES =
     "활동을 바꿀 때만 ACT를 바꾸고, 주제만 바뀌면 t만 바꿔. "
     "아이가 거부(intent=reject)면 다른 걸 강요하지 마. "
     "intent=help 이면 정답을 바로 말하지 말고 짧은 힌트(d=hint,h 증가). "
-    "intent=ambig 이고 clarify가 2 이상이면 '응?' 대신 두 가지 선택지를 줘. "
-    "기본 한 짧은 문장, 설명·힌트·이야기 장면은 두 문장까지. 질문은 턴당 최대 하나. "
+    "intent=ambig 이고 clarify가 2 이상이면 '응?' 대신 짧은 선택 둘. "
+    "choice로 영어 단어 네 개를 나열하지 마. "
+    "항상 짧은 문장 딱 하나. 두 문장 이상 금지. 질문은 턴당 최대 하나. "
     "매 턴 질문으로 끝내지 마. 아이 말을 메아리치지 마. "
     "잘했어를 남발하지 말고 구체적 반응. 질문에는 먼저 답해. "
     "못 들은 경험·눈에 보이는 걸 꾸며내지 마. "
-    "나이(4-8)에 맞는 짧은 설명은 물어보면 해도 돼.";
+    "알아듣기 힘든 음절·오인식처럼 보이는 말은 뜻을 지어내지 마. 한 번만 짧게 되물어. "
+    "사전처럼 설명하지 마. e=word 는 영어·중국어·세기·한글 놀이 퀴즈일 때만. "
+    "메타({{…}})·필드 이름(a,e,ambig)을 절대 입으로 말하지 마.";
 
 inline bool chat_mode_canned_reply(ChatMode m, const String& /*user_text*/, String& out) {
   if (m != ACT_SAFE) return false;
@@ -660,18 +679,18 @@ inline bool chat_mode_canned_reply(ChatMode m, const String& /*user_text*/, Stri
 }
 
 inline uint16_t chat_mode_max_tokens(ChatMode m) {
-  // Headroom for envelope prefix + short speech (gpt-oss counts reasoning).
+  // Toy: one short sentence. gpt-oss still spends some budget on reasoning.
   switch (m) {
     case ACT_SLEEP:
     case ACT_SAFE:
-      return 220;
+      return 140;
     case ACT_HYGIENE:
     case ACT_SONG:
     case ACT_EN:
     case ACT_ZH:
-      return 280;
+      return 160;
     default:
-      return 300;
+      return 150;
   }
 }
 
@@ -719,14 +738,17 @@ inline bool conv_parse_activity(const String& v, Activity& out) {
 }
 
 inline bool conv_parse_expect(const String& v, ExpectType& out) {
-  if (v.length() == 0 || v == "none" || v == "-") out = EXPECT_NONE;
-  else if (v == "yn") out = EXPECT_YES_NO;
+  if (v.length() == 0 || v == "none" || v == "-" || v == "ambig" || v == "clarify") {
+    out = EXPECT_NONE;
+  } else if (v == "yn") out = EXPECT_YES_NO;
   else if (v == "word") out = EXPECT_WORD;
   else if (v == "num") out = EXPECT_NUMBER;
   else if (v == "cont") out = EXPECT_CONT;
   else if (v == "open") out = EXPECT_OPEN;
   else if (v == "choice") out = EXPECT_CHOICE;
-  else return false;
+  else {
+    out = EXPECT_NONE;  // unknown (model invents e=ambig) — do not fail the envelope
+  }
   return true;
 }
 
@@ -776,9 +798,29 @@ inline String conv_field(const String& body, const char* key) {
   return v;
 }
 
-// Returns true if envelope applied. speak_out = text after }}.
+inline String conv_strip_envelope(const String& full) {
+  int start = full.indexOf("{{");
+  int end = full.indexOf("}}");
+  if (start >= 0 && end > start) {
+    String s = full.substring(end + 2);
+    s.trim();
+    int junk = s.indexOf("{{");
+    if (junk >= 0) s = s.substring(0, junk);
+    s.trim();
+    return s;  // never return the {{…}} markup itself
+  }
+  if (start >= 0) return "";  // unclosed meta — do not speak it
+  return full;
+}
+
+inline bool conv_expect_ok_for_activity(Activity a, ExpectType e) {
+  if (e != EXPECT_WORD && e != EXPECT_NUMBER) return true;
+  return a == ACT_EN || a == ACT_ZH || a == ACT_COUNT || a == ACT_HANGUL;
+}
+
+// Returns true if envelope applied. speak_out = text after }} (never the meta).
 inline bool conv_apply_envelope(ConvState& st, const String& full, String& speak_out) {
-  speak_out = full;
+  speak_out = conv_strip_envelope(full);
   int start = full.indexOf("{{");
   int end = full.indexOf("}}");
   if (start < 0 || end < 0 || end < start + 2) {
@@ -791,7 +833,7 @@ inline bool conv_apply_envelope(ConvState& st, const String& full, String& speak
   ExpectType e = st.expect;
   ActivityPhase ph = st.phase;
   DialogueAct d = st.last_act;
-  bool ok_a = true, ok_e = true, ok_p = true, ok_d = true;
+  bool ok_a = true, ok_p = true, ok_d = true;
 
   String va = conv_field(body, "a");
   String vt = conv_field(body, "t");
@@ -803,16 +845,14 @@ inline bool conv_apply_envelope(ConvState& st, const String& full, String& speak
   String vf = conv_field(body, "f");
 
   if (va.length()) ok_a = conv_parse_activity(va, a);
-  if (ve.length()) ok_e = conv_parse_expect(ve, e);
+  if (ve.length()) conv_parse_expect(ve, e);
   if (vp.length()) ok_p = conv_parse_phase(vp, ph);
   if (vd.length()) ok_d = conv_parse_dact(vd, d);
-  if (!ok_a || !ok_e || !ok_p || !ok_d) {
+  if (!ok_a || !ok_p || !ok_d) {
     Serial.println("conv: envelope invalid — state unchanged");
-    speak_out = full.substring(end + 2);
-    speak_out.trim();
-    if (speak_out.length() == 0) speak_out = full;
     return false;
   }
+  if (!conv_expect_ok_for_activity(a, e)) e = EXPECT_NONE;
 
   if (a != st.activity) {
     // Model must not silently drop a locked activity unless it marks d=chg (or done).
@@ -825,6 +865,7 @@ inline bool conv_apply_envelope(ConvState& st, const String& full, String& speak
     conv_set_str(st.topic, sizeof(st.topic), vt.c_str());
   }
   st.expect = e;
+  if (!conv_expect_ok_for_activity(st.activity, st.expect)) st.expect = EXPECT_NONE;
   st.phase = ph;
   st.last_act = d;
   if (vh.length()) {
@@ -852,24 +893,9 @@ inline bool conv_apply_envelope(ConvState& st, const String& full, String& speak
     conv_leave_activity(st, ACT_FREE);
   }
 
-  speak_out = full.substring(end + 2);
-  speak_out.trim();
-  int junk = speak_out.indexOf("{{");
-  if (junk >= 0) speak_out = speak_out.substring(0, junk);
-  speak_out.trim();
+  speak_out = conv_strip_envelope(full);
   Serial.printf("conv: a=%s t=%s e=%s p=%u h=%u d=%s\n", activity_name(st.activity),
                 st.topic[0] ? st.topic : "-", expect_name(st.expect), (unsigned)st.phase,
                 (unsigned)st.hint_level, dact_name(st.last_act));
   return true;
-}
-
-inline String conv_strip_envelope(const String& full) {
-  int start = full.indexOf("{{");
-  int end = full.indexOf("}}");
-  if (start >= 0 && end > start) {
-    String s = full.substring(end + 2);
-    s.trim();
-    return s.length() ? s : full;
-  }
-  return full;
 }

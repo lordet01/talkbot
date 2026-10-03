@@ -1,0 +1,10 @@
+{
+  "name": "en_quiz_not_menu",
+  "description": "Ask for a quiz without dumping few-shot word lists",
+  "child_lines": [
+    "영어 공부하자",
+    "문제 내줘",
+    "아니 니가 해",
+    "사과"
+  ]
+}

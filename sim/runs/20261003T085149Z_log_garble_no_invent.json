@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "sim/scenarios/log_garble_no_invent.json",
+    "name": "log_garble_no_invent"
+  },
+  "turns": [
+    {
+      "user": "안녕 디노",
+      "assistant": "안녕! 디노야!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 991,
+      "activity": "free",
+      "topic": "day",
+      "expect": "none",
+      "intent": "act_change"
+    },
+    {
+      "user": "이름이 뭐?",
+      "assistant": "디노야!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 728,
+      "activity": "free",
+      "topic": "day",
+      "expect": "none",
+      "intent": "other"
+    },
+    {
+      "user": "그렇군요",
+      "assistant": "디노야!",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 619,
+      "activity": "free",
+      "topic": "day",
+      "expect": "none",
+      "intent": "other"
+    },
+    {
+      "user": "카페리",
+      "assistant": "카페리?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 415,
+      "activity": "free",
+      "topic": "day",
+      "expect": "none",
+      "intent": "other"
+    },
+    {
+      "user": "후회",
+      "assistant": "디노야, 카페리랑 후회는 무슨 뜻이야?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 329,
+      "activity": "free",
+      "topic": "day",
+      "expect": "none",
+      "intent": "ambig"
+    },
+    {
+      "user": "김우당왕",
+      "assistant": "디노야, 김우당왕이 누구야?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 403,
+      "activity": "free",
+      "topic": "day",
+      "expect": "none",
+      "intent": "other"
+    }
+  ]
+}

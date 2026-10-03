@@ -110,14 +110,17 @@ STORY = ("이야기", "동화", "얘기 해", "이야기 해", "스토리", "이
 SONG = ("노래", "동요", "불러", "따라 해봐", "따라해봐", "율동")
 COUNT = ("숫자", "세어", "세기", "몇 개", "몇개", "하나 둘", "더하기", "빼기", "세어볼까", "같이 세")
 HANGUL = ("가나다", "한글", "글자", "따라 말", "따라말")
-EN = ("영어", "잉글리시", "hello", "Hello", "HELLO", "영어로", "english", "English", "영어 게임", "영어놀이")
+EN = (
+    "영어 하자", "영어하자", "영어 공부", "영어공부", "영어놀이", "영어 놀이",
+    "영어로", "잉글리시", "english", "English", "영어 게임",
+)
 ZH = ("중국어", "니하오", "你好", "중문", "chinese", "Chinese")
 ROLE = ("병원 놀이", "병원놀이", "가게 놀이", "가게놀이", "역할", "내가 의사", "내가 선생님", "소꿉")
 YES = ("응", "네", "응응", "네네", "좋아", "그래", "웅", "ㅇㅇ", "yes", "Yeah", "yeah", "오케이", "ok", "OK")
 NO = ("싫어", "안 해", "안해", "아니야", "싫어해", "하지 마", "하지마", "no")
 HELP = ("몰라", "모르겠어", "모르겠어여", "힌트", "알려줘", "도와줘", "어려워")
 CONT = ("그다음", "그 다음", "계속", "다음", "그리고")
-CORR = ("아니", "말고", "그게 아니라", "잖아", "아니야 그게")
+CORR = ("그게 아니라", "말고", "아니야 그게", "아니 과일", "아니 그거", "아니,")
 
 
 def _has(t: str, needles: tuple[str, ...]) -> bool:
@@ -180,7 +183,7 @@ def locked(a: Activity) -> bool:
 
 
 def detect_explicit(t: str) -> Activity:
-    if _has(t, EN):
+    if t.strip() == "영어" or _has(t, EN):
         return Activity.EN
     if _has(t, ZH):
         return Activity.ZH
@@ -273,6 +276,14 @@ def pre_update(st: ConvState, user_text: str) -> Intent:
         st.expect = Expect.CONT
         return st.last_intent
 
+    if st.activity in (Activity.EN, Activity.ZH) and any(
+        x in t for x in ("니가", "네가", "너가", "너 해", "니가 해")
+    ):
+        st.last_intent = Intent.OTHER
+        st.expect = Expect.OPEN
+        st.phase = Phase.PLAY
+        return st.last_intent
+
     if _has(t, CORR):
         st.last_intent = Intent.CORRECTION
         return st.last_intent
@@ -304,8 +315,8 @@ def pre_update(st: ConvState, user_text: str) -> Intent:
             if want == Activity.STORY:
                 st.expect = Expect.CONT
             if want in (Activity.EN, Activity.ZH):
-                st.phase = Phase.OFFER
-                st.expect = Expect.YES_NO
+                st.phase = Phase.PLAY
+                st.expect = Expect.OPEN
             return st.last_intent
 
     if locked(st.activity) and st.activity in (Activity.EN, Activity.ZH, Activity.COUNT):
@@ -347,11 +358,31 @@ def _field(body: str, key: str) -> str:
     return body[p:end].strip()
 
 
+def strip_envelope(full: str) -> str:
+    start = full.find("{{")
+    end = full.find("}}")
+    if start >= 0 and end > start:
+        s = full[end + 2 :].strip()
+        if "{{" in s:
+            s = s.split("{{", 1)[0].strip()
+        return s  # never return the {{…}} markup
+    if start >= 0:
+        return ""
+    return full
+
+
+def expect_ok_for_activity(a: Activity, e: Expect) -> bool:
+    if e not in (Expect.WORD, Expect.NUMBER):
+        return True
+    return a in (Activity.EN, Activity.ZH, Activity.COUNT, Activity.HANGUL)
+
+
 def apply_envelope(st: ConvState, full: str) -> tuple[bool, str]:
+    spoken = strip_envelope(full)
     start = full.find("{{")
     end = full.find("}}")
     if start < 0 or end < start + 2:
-        return False, full
+        return False, spoken if start >= 0 else full
     body = full[start + 2 : end].strip()
     va, vt, ve, vp, vh, vd, vx, vf = (
         _field(body, "a"),
@@ -365,12 +396,25 @@ def apply_envelope(st: ConvState, full: str) -> tuple[bool, str]:
     )
     try:
         a = Activity(va) if va else st.activity
-        e = Expect(ve) if ve else st.expect
+    except ValueError:
+        return False, spoken
+    if ve in ("-", "ambig", "clarify"):
+        e = Expect.NONE
+    elif ve:
+        try:
+            e = Expect(ve)
+        except ValueError:
+            e = Expect.NONE
+    else:
+        e = st.expect
+    try:
         ph = Phase(vp) if vp else st.phase
         d = DAct(vd) if vd else st.last_act
     except ValueError:
-        spoken = full[end + 2 :].strip()
-        return False, spoken or full
+        return False, spoken
+
+    if not expect_ok_for_activity(a, e):
+        e = Expect.NONE
 
     if a != st.activity:
         drop_locked = locked(st.activity) and a == Activity.FREE and d != DAct.CHANGE
@@ -379,6 +423,8 @@ def apply_envelope(st: ConvState, full: str) -> tuple[bool, str]:
     if vt and vt not in ("-", "topic", "TOPIC", "eng", "EN"):
         st.topic = vt[:27]
     st.expect = e
+    if not expect_ok_for_activity(st.activity, st.expect):
+        st.expect = Expect.NONE
     st.phase = ph
     st.last_act = d
     if vh:
@@ -400,19 +446,7 @@ def apply_envelope(st: ConvState, full: str) -> tuple[bool, str]:
         st.clarify_fails = 0
     if ph == Phase.DONE:
         leave_activity(st, Activity.FREE)
-    spoken = full[end + 2 :].strip()
-    if "{{" in spoken:
-        spoken = spoken.split("{{", 1)[0].strip()
     return True, spoken
-
-
-def strip_envelope(full: str) -> str:
-    start = full.find("{{")
-    end = full.find("}}")
-    if start >= 0 and end > start:
-        s = full[end + 2 :].strip()
-        return s or full
-    return full
 
 
 def state_prompt_line(st: ConvState) -> str:
@@ -435,9 +469,11 @@ OVERLAY = {
     Activity.COUNT: " [활동:세기] 같이 세기. 틀리면 힌트.",
     Activity.HANGUL: " [활동:한글] 짧은 따라 말하기.",
     Activity.EN: (
-        " [활동:영어놀이] 한영 단어. 발음기호·괄호 금지. "
-        "한국어→영어 / 영어→한국어 뜻을 구분. 교정은 고친 뜻. 모르면 힌트. "
-        "강아지 등은 topic일 뿐 활동을 바꾸지 마."
+        " [활동:영어놀이] 한 턴에 영어 단어 하나. "
+        "한글 단어→영어 한 마디, 영어→한글 뜻 한 마디. "
+        "'문제 내'면 한글 단어 하나만 물어. 보기 나열 금지. "
+        "Apple Train Boat Dog를 한꺼번에 말하지 마. "
+        "'아니 네가 해'는 출제 요청이지 단어 교정이 아님."
     ),
     Activity.ZH: " [활동:중국어놀이] 짧은 중국어 단어.",
     Activity.ROLE: " [활동:역할] 상대 역할만. 한 장면.",
@@ -452,6 +488,9 @@ ENVELOPE_RULES = (
     "ACT: free|day|meal|hygiene|story|song|count|hangul|en|zh|role|sleep|emo "
     "EXPECT: none|yn|word|num|cont|open|choice PHASE: idle|offer|play|ask|hint|done "
     "DACT: ans|ack|cont|hint|clar|choice|corr|chg|wait|ask "
-    "활동과 주제를 분리. intent=help면 힌트. intent=reject면 강요 금지. "
-    "기본 한 문장, 필요 시 둘. 질문 턴당 하나. 메아리·잘했어 남발 금지."
+    "못 들은 경험·눈에 보이는 걸 꾸며내지 마. "
+    "알아듣기 힘든 음절은 뜻을 지어내지 마. 사전처럼 설명하지 마. "
+    "choice로 영어 단어 네 개를 나열하지 마. "
+    "e=word 는 영어·중국어·세기·한글 놀이 퀴즈일 때만. "
+    "메타를 말로 읽지 마."
 )

@@ -62,6 +62,12 @@ def test_correction_stays() -> None:
     check(st.activity == Activity.EN, "stay EN")
 
 
+def test_ani_you_is_not_vocab_correction() -> None:
+    st = ConvState(activity=Activity.EN, expect=Expect.CHOICE, phase=Phase.ASK)
+    intent = pre_update(st, "아니 니가 뭐..")
+    check(intent != Intent.CORRECTION, f"got {intent}")
+
+
 def test_story_continue() -> None:
     st = ConvState(activity=Activity.STORY, phase=Phase.PLAY)
     intent = pre_update(st, "그다음?")
@@ -103,9 +109,35 @@ def test_envelope_apply() -> None:
 def test_envelope_invalid_no_corrupt() -> None:
     st = ConvState(activity=Activity.EN, topic="사과")
     snap = copy.deepcopy(st)
-    ok, _ = apply_envelope(st, "{{a=notreal;t=x;e=word;p=ask;h=0;d=ans;x=;f=}}hi")
+    ok, spoken = apply_envelope(st, "{{a=notreal;t=x;e=word;p=ask;h=0;d=ans;x=;f=}}hi")
     check(not ok, "invalid")
     check(st.topic == snap.topic, "topic unchanged")
+    check(spoken == "hi", f"spoken={spoken!r}")
+
+
+def test_envelope_does_not_speak_meta() -> None:
+    st = ConvState(activity=Activity.FREE, expect=Expect.WORD)
+    ok, spoken = apply_envelope(
+        st, "{{a=;t=;e=ambig;p=ask;h=0;d=clar;x=;f=}}영어공사는 무슨 뜻이야?"
+    )
+    check(ok, "ambig expect should apply")
+    check("{{" not in spoken, f"meta leaked: {spoken!r}")
+    check(spoken.startswith("영어공사"), f"spoken={spoken!r}")
+    check(st.expect == Expect.NONE, f"expect={st.expect}")
+
+
+def test_free_cannot_stick_word_expect() -> None:
+    st = ConvState(activity=Activity.FREE)
+    ok, spoken = apply_envelope(st, "{{a=free;t=;e=word;p=play;h=0;d=ans;x=;f=}}디노야.")
+    check(ok, "ok")
+    check(spoken == "디노야.", f"spoken={spoken!r}")
+    check(st.expect == Expect.NONE, f"expect stuck as {st.expect}")
+
+
+def test_englishongsa_not_en_mode() -> None:
+    st = ConvState(activity=Activity.FREE)
+    pre_update(st, "영어공사")
+    check(st.activity == Activity.FREE, f"got {st.activity}")
 
 
 def test_api_failure_restore_pattern() -> None:
@@ -125,12 +157,16 @@ def main() -> None:
         test_help_hint,
         test_en_topic_dog_not_nature,
         test_correction_stays,
+        test_ani_you_is_not_vocab_correction,
         test_story_continue,
         test_explicit_switch,
         test_no_sticky_expiry,
         test_morning_not_meal,
         test_envelope_apply,
         test_envelope_invalid_no_corrupt,
+        test_envelope_does_not_speak_meta,
+        test_free_cannot_stick_word_expect,
+        test_englishongsa_not_en_mode,
         test_api_failure_restore_pattern,
     ]
     failed = 0

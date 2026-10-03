@@ -56,11 +56,11 @@ SYSTEM_PROMPT = (
     "'그다음?'은 이야기를 이어가. 활동(영어놀이 등)과 주제(강아지)를 섞지 마. "
     "듣지 않은 일·눈에 보이는 것·같이 안 한 경험을 꾸며내지 마. "
     "말이 애매하면 한 번만 짧게 되묻고, 같은 '응?'을 반복하지 마. 두 번 실패하면 선택지 둘. "
-    "기본은 짧은 문장 하나. 설명·힌트·이야기 장면은 두 문장까지. 세 문장 금지. "
+    "항상 짧은 문장 딱 하나. 두 문장 이상·나열·강의 금지. "
     "질문은 턴당 최대 하나. 매 턴 질문으로 끝내지 마. "
     "아이 말을 메아리치지 마. '잘했어!'만 반복하지 말고 구체적 반응. "
     "아이 질문에는 먼저 답한 뒤, 필요할 때만 제안을 해. 거부와 그만은 존중해. "
-    "물어보면 나이에 맞는 짧은 설명은 해도 돼. 길게 강의하지 마. "
+    "알아듣기 힘든 음절은 뜻을 지어내지 마. 사전처럼 설명하지 마. "
     "이야기 한 장면만 말하고 멈춰. "
     "기본은 한국어. 영어·중국어 놀이일 때만 짧은 외국어 단어 허용. "
     "마크다운·이모지·물결표(~)·특수기호·메타 설명 금지. "
@@ -73,12 +73,12 @@ LLM_REASONING_EFFORT = "low"
 CHAT_HIST_MAX = 20
 
 MAX_TOKENS = {
-    Activity.SLEEP: 220,
-    Activity.SAFE: 220,
-    Activity.HYGIENE: 280,
-    Activity.SONG: 280,
-    Activity.EN: 280,
-    Activity.ZH: 280,
+    Activity.SLEEP: 140,
+    Activity.SAFE: 140,
+    Activity.HYGIENE: 160,
+    Activity.SONG: 160,
+    Activity.EN: 160,
+    Activity.ZH: 160,
 }
 TEMP = {
     Activity.SLEEP: 0.30,
@@ -95,20 +95,18 @@ TEMP = {
 def en_zh_few_shots(activity: Activity) -> list[dict[str, str]]:
     if activity == Activity.EN:
         return [
-            {"role": "user", "content": "영어로 뭐야?"},
-            {"role": "assistant", "content": "{{a=en;t=;e=open;p=ask;h=0;d=clar;x=;f=}}어떤 거?"},
+            {"role": "user", "content": "문제 내줘"},
+            {"role": "assistant", "content": "{{a=en;t=사과;e=word;p=ask;h=0;d=ask;x=Apple;f=}}사과는 영어로 뭐야?"},
             {"role": "user", "content": "사과"},
             {"role": "assistant", "content": "{{a=en;t=사과;e=word;p=ask;h=0;d=ans;x=Apple;f=}}Apple!"},
-            {"role": "user", "content": "그러면 기차는?"},
-            {"role": "assistant", "content": "{{a=en;t=기차;e=word;p=ask;h=0;d=ans;x=Train;f=}}Train!"},
             {"role": "user", "content": "배는 영어로 뭐야"},
             {"role": "assistant", "content": "{{a=en;t=배;e=word;p=ask;h=0;d=ans;x=Boat;f=}}Boat!"},
-            {"role": "user", "content": "아니 과일"},
+            {"role": "user", "content": "아니 과일 배"},
             {"role": "assistant", "content": "{{a=en;t=배;e=word;p=ask;h=0;d=corr;x=Pear;f=}}Pear!"},
+            {"role": "user", "content": "아니 니가 해"},
+            {"role": "assistant", "content": "{{a=en;t=;e=open;p=play;h=0;d=ask;x=;f=}}그럼 네가 말해. 뭐를 영어로 할까?"},
             {"role": "user", "content": "몰라"},
-            {"role": "assistant", "content": "{{a=en;t=배;e=word;p=hint;h=1;d=hint;x=Pear;f=}}피…로 시작해."},
-            {"role": "user", "content": "강아지는?"},
-            {"role": "assistant", "content": "{{a=en;t=강아지;e=word;p=ask;h=0;d=ans;x=Dog;f=}}Dog!"},
+            {"role": "assistant", "content": "{{a=en;t=사과;e=word;p=hint;h=1;d=hint;x=Apple;f=}}에, 에이로 시작해."},
             {"role": "user", "content": "apple 한국말로?"},
             {"role": "assistant", "content": "{{a=en;t=apple;e=word;p=ask;h=0;d=ans;x=;f=}}사과!"},
         ]
@@ -241,6 +239,23 @@ class DinoBrain:
             return rec
 
         self.append("user", user_text)
+        if self.conv.activity in (Activity.EN, Activity.ZH) and any(
+            x in user_text for x in ("니가", "네가", "너가", "너 해", "니가 해")
+        ):
+            canned = "그럼 네가 말해 봐!"
+            self.append("assistant", canned)
+            rec = TurnRecord(
+                user=user_text,
+                assistant=canned,
+                mode=LEGACY_NAME.get(self.conv.activity, "J-en"),
+                latency_ms=int((time.time() - t0) * 1000),
+                activity=self.conv.activity.value,
+                topic=self.conv.topic,
+                expect=self.conv.expect.value,
+                intent=intent.value,
+            )
+            self.transcript.append(rec)
+            return rec
         system = (
             SYSTEM_PROMPT
             + ENVELOPE_RULES
@@ -254,7 +269,7 @@ class DinoBrain:
         try:
             raw = self.groq_chat(
                 messages,
-                max_tokens=MAX_TOKENS.get(self.conv.activity, 300),
+                max_tokens=MAX_TOKENS.get(self.conv.activity, 150),
                 temperature=TEMP.get(self.conv.activity, 0.45),
             )
         except Exception as e:
@@ -306,6 +321,9 @@ def clean_assistant_text(text: str) -> str:
         else:
             t = re.sub(r"(?i)\bSorry,?\s*I forgot\.?", "미안!", t)
             t = re.sub(r"(?i)\bSorry[.!]?", "미안!", t)
+    hits = sum(1 for w in ("Apple", "Train", "Boat", "Dog", "Banana") if w in t)
+    if hits >= 2:
+        t = "사과는 영어로 뭐야?"
     t = re.sub(r"[ \t]{2,}", " ", t).strip()
     parts = re.split(r"(?<=[.!?。！？])\s+", t)
     parts = [p for p in parts if p.strip()]

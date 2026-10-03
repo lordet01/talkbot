@@ -1,0 +1,12 @@
+{
+  "name": "log_garble_no_invent",
+  "description": "STT-like garble must not become invented dictionary/story",
+  "child_lines": [
+    "안녕 디노",
+    "이름이 뭐?",
+    "그렇군요",
+    "카페리",
+    "후회",
+    "김우당왕"
+  ]
+}
