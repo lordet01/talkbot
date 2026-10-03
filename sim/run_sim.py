@@ -21,7 +21,12 @@ from dino_brain import (  # noqa: E402
 
 def print_turn(i: int, rec) -> None:
     flag = " ★" if rec.entered else ""
-    print(f"\n[{i}] mode={rec.mode} sticky={rec.sticky}{flag} ({rec.latency_ms}ms)")
+    topic = getattr(rec, "topic", "") or "-"
+    expect = getattr(rec, "expect", "") or "-"
+    print(
+        f"\n[{i}] mode={rec.mode} act={getattr(rec, 'activity', '?')} "
+        f"t={topic} e={expect}{flag} ({rec.latency_ms}ms)"
+    )
     print(f"  아이: {rec.user}")
     print(f"  디노: {rec.assistant}")
 

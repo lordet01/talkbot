@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "../sim/scenarios/conv_en_dog_topic.json",
+    "name": "conv_en_dog_topic"
+  },
+  "turns": [
+    {
+      "user": "영어 게임 하자",
+      "assistant": "영어 게임 할래?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 1112,
+      "activity": "free",
+      "topic": "",
+      "expect": "choice",
+      "intent": "act_change"
+    },
+    {
+      "user": "응",
+      "assistant": "좋아! 영어 단어 맞추기 할까?",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 449,
+      "activity": "free",
+      "topic": "eng",
+      "expect": "choice",
+      "intent": "other"
+    },
+    {
+      "user": "사과",
+      "assistant": "apple은 영어로 사과야.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 669,
+      "activity": "free",
+      "topic": "eng",
+      "expect": "choice",
+      "intent": "ambig"
+    },
+    {
+      "user": "강아지는?",
+      "assistant": "dog",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 529,
+      "activity": "free",
+      "topic": "eng",
+      "expect": "choice",
+      "intent": "other"
+    },
+    {
+      "user": "아니 고양이",
+      "assistant": "cat",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 360,
+      "activity": "free",
+      "topic": "eng",
+      "expect": "choice",
+      "intent": "correction"
+    }
+  ]
+}

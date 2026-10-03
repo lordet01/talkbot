@@ -64,7 +64,8 @@ static const size_t TTS_MAX_CHARS = 600;
 
 static const size_t SAMPLE_RATE = 16000;       // mic + I2S device rate
 static const uint32_t TTS_SAMPLE_RATE = 16000; // match device rate — no resample, less bandwidth
-static const size_t MAX_RECORD_SEC = 5;
+// Max capture (PSRAM). 8s ≈ 256KB; raise only with heap_caps check at boot.
+static const size_t MAX_RECORD_SEC = 8;
 static const size_t MAX_SAMPLES = SAMPLE_RATE * MAX_RECORD_SEC;
 
 // Adaptive energy VAD — balance: reject keyboard/ambient (~0.03 RMS) vs accept normal speech (~0.06+ peak).
@@ -85,11 +86,13 @@ static const float NOISE_FLOOR_MIN = 0.0035f;
 static const float NOISE_FLOOR_MAX = 0.038f;
 static const float NOISE_EMA_FAST = 0.12f;
 static const float NOISE_EMA_SLOW = 0.03f;
-static const uint32_t SILENCE_MS_SHORT = 200;
-static const uint32_t SILENCE_MS_LONG = 260;
-static const uint32_t SILENCE_ADAPT_AFTER_MS = 700;
+// End-of-utterance silence (experimental starting points for child pauses).
+// SHORT after longer speech; LONG while utterance still short (thinking pause).
+static const uint32_t SILENCE_MS_SHORT = 700;
+static const uint32_t SILENCE_MS_LONG = 900;
+static const uint32_t SILENCE_ADAPT_AFTER_MS = 900;
 // Ignore brief RMS spikes while already in silence (keyboard / AC blips).
-static const uint32_t SILENCE_BLIP_IGNORE_MS = 80;
+static const uint32_t SILENCE_BLIP_IGNORE_MS = 120;
 // If TTFT is slow, play a short filler; never block POST→SSE on opener.
 // Typical TTFT is ~500–600ms — defer past that so normal turns skip entirely.
 static const uint32_t OPENER_DEFER_MS = 700;
@@ -98,14 +101,18 @@ static const size_t VAD_START_SAMPLES = 640;
 static const size_t VAD_END_SAMPLES = 320;
 static const size_t VAD_START_HITS = 5;            // ~200 ms sustained
 static const size_t NOISE_CALIB_SAMPLES = SAMPLE_RATE / 4;
-static const size_t MIN_SPEECH_SAMPLES = SAMPLE_RATE * 3 / 5;  // 0.60 s
-static const size_t SPEECH_PEAK_WINDOWS_MIN = 6;
-static const size_t SPEECH_VOICED_WINDOWS_MIN = 5;
+// Min duration: allow one-word replies (응/네/아니); noise path still needs energy checks.
+static const size_t MIN_SPEECH_SAMPLES = SAMPLE_RATE / 5;       // 0.20 s
+static const size_t MIN_SPEECH_SAMPLES_FULL = SAMPLE_RATE * 2 / 5;  // 0.40 s for looser energy
+static const size_t SPEECH_PEAK_WINDOWS_MIN = 3;
+static const size_t SPEECH_VOICED_WINDOWS_MIN = 2;
+static const size_t SPEECH_PEAK_WINDOWS_MIN_SHORT = 2;
+static const size_t SPEECH_VOICED_WINDOWS_MIN_SHORT = 1;
 static const size_t PREROLL_SAMPLES = SAMPLE_RATE * 3 / 10;  // 300 ms kept before onset
 static const uint32_t POST_PLAY_FLUSH_MS = 350;    // drop mic echo after speaker off
 static const uint32_t POST_TEXT_PAUSE_MS = 2500;   // ignore mic after serial text cmd
 static const uint32_t SERIAL_TYPING_PAUSE_MS = 800; // extend pause while serial chars arrive
-static const uint32_t TAIL_KEEP_MS = 80;           // trailing silence kept in upload
+static const uint32_t TAIL_KEEP_MS = 120;          // trailing silence kept in upload
 // Cooldown only when Groq returns 429 (see note_stt_rate_limit / stt_blocked_until_ms).
 static const uint32_t STT_DAILY_LIMIT_BACKOFF_MS = 4UL * 3600UL * 1000UL;
 // Zombie TLS sockets often still report connected(); refresh before reuse.
@@ -119,41 +126,27 @@ static uint32_t stt_blocked_until_ms = 0;
 static uint32_t stt_call_count = 0;
 
 static const char* SYSTEM_PROMPT =
-    // Identity
-    "너는 디노야. 부드러운 아기 티라노사우루스 인형이고, 아이 한 명과 단둘이 놀고 있어. "
-    "AI·로봇·앱·검색기가 아니야. 진짜 공룡도 아니고, 인형 친구야. "
-    // Worldview
-    "세계는 집·놀이방 같은 안전한 일상이야. 공룡 놀이는 상상으로 해도 되지만, "
-    "네가 숲에 살거나 사람을 먹는다고 말하지 마. 무섭고 잔인하고 위험한 말은 부드럽게 바꿔. "
-    // Relationship
-    "상대는 어린이 한 명뿐이야. 보호자·다른 사람·여러 아이를 가정하지 마. "
-    // Context fidelity — follow the thread
-    "직전 대화(히스토리)를 반드시 이어서 답해. 아이가 방금 말한 것과 바로 앞 네 말을 한 줄기로 봐. "
-    "아이가 '아니' '말고' '그게 아니라' '잖아'로 고치면, 고친 뜻으로 바로 답해. 새 주제를 꺼내지 마. "
-    "질문이 오면 먼저 짧게 답하고, 질문을 되묻거나 다른 이야기로 새지 마. "
-    "듣지 않은 일·같이 안 한 경험을 꾸며내지 마. "
-    "말이 이상하거나 알아듣기 어려우면 되풀이하지 말고 '응?' 또는 '뭐라고?' 한 마디만. "
-    "애매할 때만 한 번 짧게 되물어. "
-    // Turn rhythm (toy doll conversation)
-    "이 대화는 장난감 인형과 아이의 말장난이야. 한 턴에 한 박만 해. "
-    "아이 말이 짧으면 너도 짧게. 아이가 한 마디면 너도 한 마디가 기본이야. "
-    "한 턴에 반응·설명·질문을 한꺼번에 쌓지 마. 하나만 골라. "
-    "기본은 문장 하나. 꼭 필요할 때만 둘. 세 문장 이상은 절대 금지. "
-    "아이 말을 길게 그대로 되풀이하지 마. 한 박만 받아쳐. "
-    "매번 질문으로 끝내지 마. 세 번에 한 번 정도만 가볍게 물어봐. "
-    "가르치거나 길게 설명하지 마. 놀이에 맞춰 받아쳐. "
-    "이야기 해달라고 하면 한 장면만 짧게 말하고 멈춰. 다음 장면은 아이가 말할 때까지 기다려. "
-    // Voice / style
-    "기본은 한국어. 영어·중국어 놀이일 때만 짧은 외국어 허용. "
-    "Sorry·I forgot 같은 영어 문장으로 사과하거나 설명하지 마. "
-    "마크다운·긴 영어 설명·이모지·따옴표·물음표만 있는 꼬리 금지. "
-    "이모지·괄호 속 지시문·영어 메타 설명·물결표(~)·별표·특수기호는 절대 붙이지 마. "
-    "같은 말·감탄을 두 번 붙이지 마. '좋아!좋아!' 금지. "
-    "웃을 땐 '하하' '히히', 감탄은 '와' '우와' '음'처럼 입으로 낼 말로. "
-    "감탄사만 보내지 마. 바로 본론. "
-    "좋은 예: '우와, 공룡이구나!' / '같이 쿵쿵 걸어볼까?' / '난 디노야.' "
-    "나쁜 예: '공룡 이야기? 나도 티라노 인형이야. 뭐가 제일 궁금해?' "
-    "모드 이름·메뉴 나열은 하지 마.";
+    "너는 디노야. 부드러운 아기 티라노사우루스 인형이고, 4~8살 아이 한 명과 단둘이 놀고 있어. "
+    "AI·로봇·앱·검색기가 아니야. 인형 친구야. "
+    "세계는 집·놀이방 같은 안전한 일상이야. 무섭고 잔인한 말은 부드럽게 바꿔. "
+    "직전 대화와 [상태]를 보고 아이 말을 해석해: "
+    "대기 중 질문에 대한 답 / 새 질문 / 교정 / 제안 거부 / 힌트·도움 / 이어가기 / 활동 바꾸기 / 애매함. "
+    "'응'은 직전 제안·질문에 대한 수락일 수 있어. '몰라'는 퀴즈에서 힌트 요청이야. "
+    "'싫어'는 제안 거부이지 감정 상담 모드가 아니야. "
+    "'아니, 과일 배'는 같은 활동 안에서 뜻을 고치는 거야. "
+    "'그다음?'은 이야기를 이어가. 활동(영어놀이 등)과 주제(강아지)를 섞지 마. "
+    "듣지 않은 일·눈에 보이는 것·같이 안 한 경험을 꾸며내지 마. "
+    "말이 애매하면 한 번만 짧게 되묻고, 같은 '응?'을 반복하지 마. 두 번 실패하면 선택지 둘. "
+    "기본은 짧은 문장 하나. 설명·힌트·이야기 장면은 두 문장까지. 세 문장 금지. "
+    "질문은 턴당 최대 하나. 매 턴 질문으로 끝내지 마. "
+    "아이 말을 메아리치지 마. '잘했어!'만 반복하지 말고 구체적 반응. "
+    "아이 질문에는 먼저 답한 뒤, 필요할 때만 제안을 해. 거부와 그만은 존중해. "
+    "물어보면 나이에 맞는 짧은 설명은 해도 돼. 길게 강의하지 마. "
+    "이야기 한 장면만 말하고 멈춰. "
+    "기본은 한국어. 영어·중국어 놀이일 때만 짧은 외국어 단어 허용. "
+    "마크다운·이모지·물결표(~)·특수기호·메타 설명 금지. "
+    "웃을 땐 '하하' '히히'. 감탄사만 보내지 마. "
+    "모드 이름·메뉴를 말하지 마.";
 
 I2SStream i2s;
 AudioInfo speaker_info(SAMPLE_RATE, 2, 32);
@@ -171,10 +164,12 @@ struct ChatHistMsg {
 };
 static ChatHistMsg g_chat_hist[CHAT_HIST_MAX];
 static uint8_t g_chat_hist_n = 0;
-ChatModeState g_chat_mode;
-// Optional TTS override for EN/ZH play (nullptr → Korean defaults).
+ConvState g_conv;
+ChatModeState g_chat_mode;  // legacy view synced from g_conv for logs
+// Optional TTS override (always null — one device voice).
 static const char* tts_lang_override = nullptr;
 static const char* tts_voice_override = nullptr;
+static uint32_t g_turn_id = 0;
 
 static const char* effective_tts_lang() {
   return tts_lang_override ? tts_lang_override : GOOGLE_TTS_LANG;
@@ -514,10 +509,13 @@ void note_stt_rate_limit(int http_status, const uint8_t* body, size_t body_len) 
 }
 
 bool recording_has_speech() {
+  const float dur = record_count / (float)SAMPLE_RATE;
   if (record_count < MIN_SPEECH_SAMPLES) {
-    Serial.printf("listen: reject short (%0.2fs)\n", record_count / (float)SAMPLE_RATE);
+    Serial.printf("listen: reject short (%.2fs < %.2fs min)\n", dur,
+                  MIN_SPEECH_SAMPLES / (float)SAMPLE_RATE);
     return false;
   }
+  const bool short_utt = record_count < MIN_SPEECH_SAMPLES_FULL;
 
   float avg = sample_rms(record_buf, record_count);
   float min_avg = noise_floor_rms * SPEECH_MIN_SNR;
@@ -527,9 +525,11 @@ bool recording_has_speech() {
     if (adaptive > abs_floor) abs_floor = adaptive;
   }
   if (min_avg < abs_floor) min_avg = abs_floor;
+  // Short replies (응/네): allow slightly lower average if onset peak was clear.
+  if (short_utt) min_avg *= 0.85f;
   if (avg < min_avg) {
-    Serial.printf("listen: reject quiet (avg=%.3f need=%.3f onset=%.3f nf=%.3f)\n",
-                  avg, min_avg, last_onset_peak_rms, noise_floor_rms);
+    Serial.printf("listen: reject quiet (avg=%.3f need=%.3f onset=%.3f nf=%.3f dur=%.2fs)\n",
+                  avg, min_avg, last_onset_peak_rms, noise_floor_rms, dur);
     return false;
   }
 
@@ -557,26 +557,35 @@ bool recording_has_speech() {
     n_w++;
     if (w > peak) peak = w;
     if (w >= peak_need) peak_windows++;
-    // Require near-peak energy + speech-like ZCR (was 0.85 — too loose on hiss).
     if (w >= peak_need * 0.92f && z >= ZCR_SPEECH_MIN && z <= ZCR_SPEECH_MAX) {
       voiced_windows++;
     }
   }
 
-  if (n_w < 4) return false;
+  if (n_w < 2) {
+    Serial.printf("listen: reject short_windows (n=%u dur=%.2fs)\n", (unsigned)n_w, dur);
+    return false;
+  }
   float mean_w = (float)(sum_w / n_w);
   float var_w = (float)(sum_w2 / n_w) - mean_w * mean_w;
   if (var_w < 0.0f) var_w = 0.0f;
   float mod = (mean_w > 1e-6f) ? (sqrtf(var_w) / mean_w) : 0.0f;
 
-  bool ok = peak >= peak_need &&
-            peak_windows >= SPEECH_PEAK_WINDOWS_MIN &&
-            voiced_windows >= SPEECH_VOICED_WINDOWS_MIN &&
-            mod >= SPEECH_MOD_MIN;
+  size_t need_peak = short_utt ? SPEECH_PEAK_WINDOWS_MIN_SHORT : SPEECH_PEAK_WINDOWS_MIN;
+  size_t need_voiced = short_utt ? SPEECH_VOICED_WINDOWS_MIN_SHORT : SPEECH_VOICED_WINDOWS_MIN;
+  float need_mod = short_utt ? (SPEECH_MOD_MIN * 0.7f) : SPEECH_MOD_MIN;
+
+  bool ok = peak >= peak_need && peak_windows >= need_peak && voiced_windows >= need_voiced &&
+            mod >= need_mod;
 
   if (!ok) {
-    Serial.printf("listen: reject noise (avg=%.3f peak=%.3f mod=%.2f voiced=%u nf=%.3f)\n",
-                  avg, peak, mod, (unsigned)voiced_windows, noise_floor_rms);
+    Serial.printf(
+        "listen: reject noise (avg=%.3f peak=%.3f mod=%.2f voiced=%u/%u dur=%.2fs short=%d nf=%.3f)\n",
+        avg, peak, mod, (unsigned)voiced_windows, (unsigned)need_voiced, dur, short_utt ? 1 : 0,
+        noise_floor_rms);
+  } else {
+    Serial.printf("listen: accept speech (dur=%.2fs short=%d peak=%.3f)\n", dur, short_utt ? 1 : 0,
+                  peak);
   }
   return ok;
 }
@@ -915,9 +924,10 @@ bool record_utterance() {
         if (tail_have > tail_keep && record_count > tail_have - tail_keep) {
           record_count -= (tail_have - tail_keep);
         }
-        Serial.printf("listen: end (%0.1fs, silence=%ums rms=%.3f end_th=%.3f peak=%.3f)\n",
-                      record_count / (float)SAMPLE_RATE, (unsigned)silence_needed,
-                      rms, end_th, last_onset_peak_rms);
+        Serial.printf(
+            "listen: end_utt (%.1fs silence_need=%ums reason=silence rms=%.3f end_th=%.3f peak=%.3f)\n",
+            record_count / (float)SAMPLE_RATE, (unsigned)silence_needed, rms, end_th,
+            last_onset_peak_rms);
         break;
       }
     } else if (silence_start != 0) {
@@ -935,9 +945,10 @@ bool record_utterance() {
 
   if (record_count >= MAX_SAMPLES) {
     uint32_t sil_ms = silence_start ? (millis() - silence_start) : 0;
-    Serial.printf("listen: end max (%.1fs) rms=%.3f end_th=%.3f peak=%.3f silence=%ums\n",
-                  record_count / (float)SAMPLE_RATE, last_rms, vad_end_threshold(),
-                  last_onset_peak_rms, (unsigned)sil_ms);
+    Serial.printf(
+        "listen: end_utt (%.1fs reason=max_record rms=%.3f end_th=%.3f peak=%.3f silence=%ums)\n",
+        record_count / (float)SAMPLE_RATE, last_rms, vad_end_threshold(), last_onset_peak_rms,
+        (unsigned)sil_ms);
   }
 
   i2s.end();
@@ -1557,18 +1568,25 @@ static String extract_sse_delta_content(const String& data_line) {
   return out;
 }
 
-// SSE chat: speaks each finished sentence via TTS as tokens arrive.
-// Fills `reply` with the full assistant text. Returns false on hard failure.
+// SSE chat: parse optional {{…}} state envelope, then speak sentences as they complete.
+// History stores spoken text only (never control markers). API failure does not mutate state.
 bool groq_chat(const String& user_text, String& reply) {
   reply = "";
+  g_turn_id++;
+  const uint32_t turn = g_turn_id;
 
-  chat_mode_update(g_chat_mode, user_text);
-  Serial.printf("mode: active=%s sticky=%u entered=%d\n", chat_mode_name(g_chat_mode.mode),
-                (unsigned)g_chat_mode.sticky, g_chat_mode.just_entered ? 1 : 0);
+  // Snapshot for rollback if LLM fails after we only did deterministic pre-update.
+  ConvState conv_snapshot = g_conv;
+
+  UtterIntent intent = conv_pre_update(g_conv, user_text);
+  conv_sync_legacy(g_conv, g_chat_mode);
+  Serial.printf(
+      "conv: turn=%u act=%s topic=%s expect=%s intent=%u clarify=%u\n", (unsigned)turn,
+      activity_name(g_conv.activity), g_conv.topic[0] ? g_conv.topic : "-",
+      expect_name(g_conv.expect), (unsigned)intent, (unsigned)g_conv.clarify_fails);
 
   chat_mode_tts_voice(g_chat_mode.mode, &tts_lang_override, &tts_voice_override);
 
-  // Safety: fixed line, no LLM.
   String canned;
   if (chat_mode_canned_reply(g_chat_mode.mode, user_text, canned)) {
     append_chat_message("user", user_text.c_str());
@@ -1579,15 +1597,18 @@ bool groq_chat(const String& user_text, String& reply) {
     speak_session_end();
     tts_lang_override = nullptr;
     tts_voice_override = nullptr;
-    // After refusal, soft-return to play next turn.
-    chat_mode_enter(g_chat_mode, MODE_PLAY);
-    Serial.printf("mode: canned safe reply spoke=%d\n", ok ? 1 : 0);
+    conv_leave_activity(g_conv, ACT_FREE);
+    conv_sync_legacy(g_conv, g_chat_mode);
+    Serial.printf("conv: canned safe spoke=%d\n", ok ? 1 : 0);
     return ok;
   }
 
   if (!ensure_groq_tls(false)) {
+    g_conv = conv_snapshot;  // network fail — do not keep partial intent side-effects as "heard"
+    conv_sync_legacy(g_conv, g_chat_mode);
     tts_lang_override = nullptr;
     tts_voice_override = nullptr;
+    Serial.println("conv: llm tls fail — state restored");
     return false;
   }
 
@@ -1599,6 +1620,8 @@ bool groq_chat(const String& user_text, String& reply) {
     system_prompt += " ";
     system_prompt += persona_extra;
   }
+  system_prompt += CONV_ENVELOPE_RULES;
+  system_prompt += conv_state_prompt_line(g_conv);
   system_prompt += chat_mode_overlay(g_chat_mode.mode);
 
   JsonDocument doc;
@@ -1607,42 +1630,39 @@ bool groq_chat(const String& user_text, String& reply) {
   sys["role"] = "system";
   sys["content"] = system_prompt;
 
-  // Format few-shots (not a lexicon). Real history follows so any word is LLM's job.
-  if (g_chat_mode.mode == MODE_EN) {
+  // Pattern few-shots with envelope (not a lexicon).
+  if (g_conv.activity == ACT_EN) {
     auto shot = [&](const char* role, const char* content) {
       JsonObject o = messages.add<JsonObject>();
       o["role"] = role;
       o["content"] = content;
     };
     shot("user", "영어로 뭐야?");
-    shot("assistant", "어떤 거?");
+    shot("assistant", "{{a=en;t=;e=open;p=ask;h=0;d=clar;x=;f=}}어떤 거?");
     shot("user", "사과");
-    shot("assistant", "Apple!");
+    shot("assistant", "{{a=en;t=사과;e=word;p=ask;h=0;d=ans;x=Apple;f=}}Apple!");
     shot("user", "그러면 기차는?");
-    shot("assistant", "Train!");
+    shot("assistant", "{{a=en;t=기차;e=word;p=ask;h=0;d=ans;x=Train;f=}}Train!");
     shot("user", "배는 영어로 뭐야");
-    shot("assistant", "Boat!");
+    shot("assistant", "{{a=en;t=배;e=word;p=ask;h=0;d=ans;x=Boat;f=}}Boat!");
     shot("user", "아니 과일");
-    shot("assistant", "Pear!");
-    shot("user", "Apple");
-    shot("assistant", "맞아! Apple!");
-    shot("user", "How to pronounce apple in Korean?");
-    shot("assistant", "사과!");
-    shot("user", "사과잖아 사과");
-    shot("assistant", "Apple!");
-  } else if (g_chat_mode.mode == MODE_ZH) {
-    JsonObject u1 = messages.add<JsonObject>();
-    u1["role"] = "user";
-    u1["content"] = "안녕이 중국어로 뭐야";
-    JsonObject a1 = messages.add<JsonObject>();
-    a1["role"] = "assistant";
-    a1["content"] = "你好!";
-    JsonObject u2 = messages.add<JsonObject>();
-    u2["role"] = "user";
-    u2["content"] = "그러면 고마워는?";
-    JsonObject a2 = messages.add<JsonObject>();
-    a2["role"] = "assistant";
-    a2["content"] = "谢谢!";
+    shot("assistant", "{{a=en;t=배;e=word;p=ask;h=0;d=corr;x=Pear;f=}}Pear!");
+    shot("user", "몰라");
+    shot("assistant", "{{a=en;t=배;e=word;p=hint;h=1;d=hint;x=Pear;f=}}피…로 시작해.");
+    shot("user", "강아지는?");
+    shot("assistant", "{{a=en;t=강아지;e=word;p=ask;h=0;d=ans;x=Dog;f=}}Dog!");
+    shot("user", "apple 한국말로?");
+    shot("assistant", "{{a=en;t=apple;e=word;p=ask;h=0;d=ans;x=;f=}}사과!");
+  } else if (g_conv.activity == ACT_ZH) {
+    auto shot = [&](const char* role, const char* content) {
+      JsonObject o = messages.add<JsonObject>();
+      o["role"] = role;
+      o["content"] = content;
+    };
+    shot("user", "안녕이 중국어로 뭐야");
+    shot("assistant", "{{a=zh;t=안녕;e=word;p=ask;h=0;d=ans;x=;f=}}你好!");
+    shot("user", "그러면 고마워는?");
+    shot("assistant", "{{a=zh;t=고마워;e=word;p=ask;h=0;d=ans;x=;f=}}谢谢!");
   }
 
   for (uint8_t i = 0; i < g_chat_hist_n; i++) {
@@ -1660,25 +1680,24 @@ bool groq_chat(const String& user_text, String& reply) {
 
   String body;
   serializeJson(doc, body);
-  Serial.printf("llm: request model=%s mode=%s reasoning=%s user=\"%s\"\n", LLM_MODEL,
-                chat_mode_name(g_chat_mode.mode), LLM_REASONING_EFFORT, user_text.c_str());
+  Serial.printf("llm: request model=%s act=%s reasoning=%s user=\"%s\"\n", LLM_MODEL,
+                activity_name(g_conv.activity), LLM_REASONING_EFFORT, user_text.c_str());
 
   secure_client->printf("POST /openai/v1/chat/completions HTTP/1.1\r\n");
   groq_write_headers("application/json", body.length());
   secure_client->print(body);
   uint32_t t_req_sent = millis();
 
-  // Warm TTS while waiting for LLM headers/tokens. Do NOT block on opener —
-  // previous path played "음!" then soft-stopped I2S, delaying TTFT read + TTS.
   request_tts_preconnect();
   Serial.printf("opener: deferred (play if TTFT > %ums)\n", (unsigned)OPENER_DEFER_MS);
 
-  // Parse status + headers (don't buffer body — it's SSE).
   String status_line = secure_client->readStringUntil('\n');
   status_line.trim();
   if (!status_line.startsWith("HTTP/")) {
     Serial.printf("ERR: LLM bad status line: %s\n", status_line.c_str());
     pop_last_chat_message_if_role("user");
+    g_conv = conv_snapshot;
+    conv_sync_legacy(g_conv, g_chat_mode);
     groq_after_response(false, false);
     tts_lang_override = nullptr;
     tts_voice_override = nullptr;
@@ -1706,13 +1725,14 @@ bool groq_chat(const String& user_text, String& reply) {
 
   if (status != 200) {
     Serial.printf("ERR: LLM HTTP %d\n", status);
-    // Drain a bit of error body for logs
     uint32_t t0 = millis();
     while (secure_client->available() && millis() - t0 < 2000) {
       Serial.write(secure_client->read());
     }
     Serial.println();
     pop_last_chat_message_if_role("user");
+    g_conv = conv_snapshot;
+    conv_sync_legacy(g_conv, g_chat_mode);
     groq_after_response(false, false);
     tts_lang_override = nullptr;
     tts_voice_override = nullptr;
@@ -1722,32 +1742,54 @@ bool groq_chat(const String& user_text, String& reply) {
   BodyReader br = {secure_client, chunked,
                    chunked ? 0 : (content_length > 0 ? (long)content_length : 100000000L),
                    false};
-  String pending;   // unfinished sentence accumulator
+  String pending;
   String full;
-  full.reserve(256);
-  pending.reserve(128);
+  full.reserve(320);
+  pending.reserve(160);
   bool spoke_any = false;
   uint32_t t_first_tok = 0;
   uint32_t t_start = t_req_sent;
   bool opener_played = false;
   uint32_t opener_ms = 0;
+  bool envelope_done = false;
+  bool envelope_applied = false;
+  String speak_buf;
 
   speak_session_begin();
 
-  // Read SSE line-by-line from body
   String line_buf;
   line_buf.reserve(256);
   uint8_t tmp[256];
   uint32_t idle_start = millis();
+
+  auto flush_speakable = [&](bool force_tail) {
+    if (turn != g_turn_id) return;  // stale turn guard
+    size_t cut;
+    while ((cut = find_sentence_end(speak_buf)) > 0) {
+      String sentence = speak_buf.substring(0, cut);
+      sentence.trim();
+      speak_buf = speak_buf.substring(cut);
+      if (sentence.length() > 0) {
+        Serial.printf("llm: speak sentence: %s\n", sentence.c_str());
+        if (speak_text_ex(sentence, true)) spoke_any = true;
+      }
+    }
+    if (force_tail) {
+      speak_buf.trim();
+      if (speak_buf.length() > 0) {
+        Serial.printf("llm: speak tail: %s\n", speak_buf.c_str());
+        if (speak_text_ex(speak_buf, true)) spoke_any = true;
+        speak_buf = "";
+      }
+    }
+  };
 
   while (!br.done && millis() - t_start < 45000) {
     int n = body_reader_read(&br, tmp, sizeof(tmp));
     if (n <= 0) {
       if (br.done) break;
       if (millis() - idle_start > 15000) break;
-      // Slow TTFT: short chirp only (not full opener + soft-stop before tokens).
-      if (!opener_played && t_first_tok == 0 &&
-          millis() - t_start >= OPENER_DEFER_MS) {
+      if (!opener_played && t_first_tok == 0 && millis() - t_start >= OPENER_DEFER_MS) {
         opener_played = true;
         uint32_t t_op = millis();
         Serial.println("opener: late filler (TTFT slow)");
@@ -1764,29 +1806,46 @@ bool groq_chat(const String& user_text, String& reply) {
       char c = (char)tmp[i];
       if (c == '\r') continue;
       if (c == '\n') {
-        if (line_buf.length() == 0) {
-          // SSE event separator — ignore
-        } else {
+        if (line_buf.length() > 0) {
           String delta = extract_sse_delta_content(line_buf);
           if (delta.length() > 0) {
             if (t_first_tok == 0) {
               t_first_tok = millis() - t_start;
               Serial.printf("llm: first token in %ums (from POST, opener=%s)\n",
-                            (unsigned)t_first_tok,
-                            opener_played ? "played" : "skipped");
+                            (unsigned)t_first_tok, opener_played ? "played" : "skipped");
             }
             full += delta;
             pending += delta;
 
-            size_t cut;
-            while ((cut = find_sentence_end(pending)) > 0) {
-              String sentence = pending.substring(0, cut);
-              sentence.trim();
-              pending = pending.substring(cut);
-              if (sentence.length() > 0) {
-                Serial.printf("llm: speak sentence: %s\n", sentence.c_str());
-                if (speak_text_ex(sentence, true)) spoke_any = true;
+            if (!envelope_done) {
+              int close = pending.indexOf("}}");
+              int open = pending.indexOf("{{");
+              if (open == 0 && close > 0) {
+                String speak_part;
+                envelope_applied = conv_apply_envelope(g_conv, pending, speak_part);
+                if (!envelope_applied && speak_part.length() == 0) {
+                  // Malformed — do not corrupt state; speak nothing from meta.
+                  speak_part = conv_strip_envelope(pending);
+                }
+                conv_sync_legacy(g_conv, g_chat_mode);
+                envelope_done = true;
+                pending = "";
+                speak_buf = speak_part;
+                flush_speakable(false);
+              } else if (open < 0 && pending.length() > 24) {
+                // Model skipped envelope — speak as plain text, keep pre-LLM state.
+                Serial.println("conv: no envelope — keep prior state");
+                envelope_done = true;
+                speak_buf = pending;
+                pending = "";
+                flush_speakable(false);
+              } else if (open > 0) {
+                // Junk before envelope — drop leading junk once {{ arrives.
+                pending = pending.substring(open);
               }
+            } else {
+              speak_buf += delta;
+              flush_speakable(false);
             }
           }
         }
@@ -1797,12 +1856,21 @@ bool groq_chat(const String& user_text, String& reply) {
     }
   }
 
-  // Flush remaining unfinished text as final sentence
-  pending.trim();
-  if (pending.length() > 0) {
-    Serial.printf("llm: speak tail: %s\n", pending.c_str());
-    if (speak_text_ex(pending, true)) spoke_any = true;
+  if (!envelope_done) {
+    String speak_part;
+    if (pending.indexOf("{{") >= 0 && pending.indexOf("}}") > 0) {
+      envelope_applied = conv_apply_envelope(g_conv, pending, speak_part);
+      conv_sync_legacy(g_conv, g_chat_mode);
+      speak_buf += speak_part;
+    } else {
+      Serial.println("conv: stream end without envelope — keep prior state");
+      speak_buf += pending;
+    }
+    envelope_done = true;
+  } else if (pending.length()) {
+    speak_buf += pending;
   }
+  flush_speakable(true);
 
   speak_session_end();
   groq_after_response(true, keep_alive);
@@ -1810,18 +1878,22 @@ bool groq_chat(const String& user_text, String& reply) {
   tts_lang_override = nullptr;
   tts_voice_override = nullptr;
 
-  reply = full;
-  reply.trim();
+  String spoken = conv_strip_envelope(full);
+  spoken.trim();
+  reply = spoken;
   if (reply.length() == 0) {
-    Serial.printf("ERR: LLM empty body (first_tok=%u ms, spoke=%d)\n",
-                  (unsigned)t_first_tok, spoke_any ? 1 : 0);
+    Serial.printf("ERR: LLM empty speakable (first_tok=%u ms, spoke=%d, env=%d)\n",
+                  (unsigned)t_first_tok, spoke_any ? 1 : 0, envelope_applied ? 1 : 0);
     pop_last_chat_message_if_role("user");
+    g_conv = conv_snapshot;
+    conv_sync_legacy(g_conv, g_chat_mode);
     return false;
   }
+  // History = what the child could hear (spoken), not raw envelope.
   append_chat_message("assistant", reply.c_str());
-  Serial.printf("llm: %s (spoke=%d, %ums, ttft=%ums opener_ms=%u)\n", reply.c_str(),
-                spoke_any ? 1 : 0, (unsigned)(millis() - t_start),
-                (unsigned)t_first_tok, (unsigned)opener_ms);
+  Serial.printf("llm: %s (spoke=%d, %ums, ttft=%ums opener_ms=%u env=%d)\n", reply.c_str(),
+                spoke_any ? 1 : 0, (unsigned)(millis() - t_start), (unsigned)t_first_tok,
+                (unsigned)opener_ms, envelope_applied ? 1 : 0);
   return true;
 }
 

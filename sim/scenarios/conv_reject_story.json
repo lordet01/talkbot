@@ -1,0 +1,11 @@
+{
+  "name": "conv_reject_story",
+  "description": "싫어 rejects proposal; story continue; explicit switch",
+  "child_lines": [
+    "영어 할까?",
+    "싫어",
+    "공룡 이야기 해줘",
+    "그다음?",
+    "그다음?"
+  ]
+}

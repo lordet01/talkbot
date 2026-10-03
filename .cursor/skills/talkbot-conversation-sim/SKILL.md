@@ -22,7 +22,9 @@ firmware chat modes + system prompt + Groq LLM, then fix awkwardness and re-run.
 
 | Path | Role |
 |------|------|
-| `sim/dino_brain.py` | Firmware-mirror: modes, sticky, history, Groq chat |
+| `sim/dino_brain.py` | Firmware-mirror: ConvState, envelope, history, Groq chat |
+| `sim/conv_state.py` | Deterministic activity/topic/intent (mirrors chat_modes.h) |
+| `sim/test_conv_state.py` | No-API state transition tests |
 | `sim/run_sim.py` | Scripted + free long-turn runner |
 | `sim/critique.py` | Heuristic + optional LLM critique of a transcript |
 | `sim/scenarios/*.json` | Fixed child lines (regression) |
@@ -65,7 +67,7 @@ Needs `GROQ_API` in repo `.env` (same as firmware).
 If you edit firmware prompts, update `sim/dino_brain.py` constants in the **same change**:
 
 - `SYSTEM_PROMPT` ↔ `05_groq_voice_chat.ino`
-- Mode overlays / sticky / triggers ↔ `chat_modes.h`
+- ConvState / overlays / envelope ↔ `chat_modes.h` + `sim/conv_state.py`
 - History length (`CHAT_HIST_MAX`) ↔ ring buffer in `.ino`
 
 ## Design goals (long-turn)
@@ -74,8 +76,8 @@ If you edit firmware prompts, update `sim/dino_brain.py` constants in the **same
 2. **Ellipsis**: `그러면 X는?` continues the same question pattern.
 3. **Correction**: `아니` / `말고` revises the prior answer, does not start a new chat.
 4. **One beat**: max ~2 short sentences; no lectures.
-5. **Mode stickiness**: stay in J-en (etc.) across related turns; exit on clear signal only.
-6. **History**: enough turns for a mini-game (default ≥12 messages / ~6 exchanges).
+5. **Activity persistence**: stay in `en`/story/etc. until explicit exit or completion (no sticky expiry).
+6. **History**: enough turns for a mini-game (`CHAT_HIST_MAX` = 20 messages).
 
 ## Awkwardness codes
 
@@ -92,17 +94,17 @@ Use these tags in critiques and commits:
 | `EMPTY_ASK` | Vague ask answered with guess instead of short clarify |
 | `LOOP_ASK` | Same suggestion/question repeated every turn |
 
-## Long-turn sticky note
+## State note
 
-Firmware sticky (~4) is for *mode preference*, not conversation memory.
-Memory is the history ring buffer (`CHAT_HIST_MAX`, default 12 messages).
-When free sims feel amnesiac mid-game, raise history cap in **both** `.ino` and `dino_brain.py`.
+Activity/topic/expect live in `ConvState` (firmware + `sim/conv_state.py`).
+Memory of words spoken is the history ring (`CHAT_HIST_MAX` = 20).
+LLM replies use a `{{a=…}}` envelope; spoken text only goes into history.
 
 ## Fix priority
 
-1. History bugs / mode sticky (firmware + mirror)
+1. ConvState transitions / envelope validation (firmware + `conv_state.py`)
 2. System / overlay prompt wording
-3. Few-shot format examples (pattern only, not a word dictionary)
+3. Few-shot pattern examples (with envelope; not a word dictionary)
 4. Temperature / max_tokens only if format still fails
 
 **Do not** add a closed English word dictionary as the main answer path. LLM answers any word; firmware/sim only teach the *pattern*.

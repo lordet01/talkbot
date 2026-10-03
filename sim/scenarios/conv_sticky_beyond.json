@@ -1,0 +1,14 @@
+{
+  "name": "conv_sticky_beyond",
+  "description": "EN continues past old sticky=4 limit without exit",
+  "child_lines": [
+    "영어 하자",
+    "사과",
+    "그러면 펜은?",
+    "그러면 책은?",
+    "그러면 의자은?",
+    "그러면 문은?",
+    "그러면 창문은?",
+    "그러면 바다는?"
+  ]
+}

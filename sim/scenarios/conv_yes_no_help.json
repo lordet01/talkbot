@@ -1,0 +1,11 @@
+{
+  "name": "conv_yes_no_help",
+  "description": "응 accepts count offer; 몰라 gets hint then answer",
+  "child_lines": [
+    "숫자 세어볼까?",
+    "응",
+    "사과는 영어로 뭘까?",
+    "몰라",
+    "애플"
+  ]
+}

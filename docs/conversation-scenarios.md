@@ -506,13 +506,14 @@ TTS·발음 품질이 부족하면 **단어 수·길이 더 짧게**. 틀린 성
 |----|------|
 | 키워드 기울기 | 아이 말로 카테고리 감지 (메뉴 아님) |
 | 우선순위 | Z > 종료→A > E > N > 활동 > sticky 유지 > A |
-| sticky | 진입 후 약 4턴 유지, 강한 신호면 즉시 전환 |
-| 모드 오버레이 | 시스템 프롬프트에 짧은 모드 규칙 append |
+| 대화 상태 | Activity ≠ topic; sticky 턴 만료 없음 (명시적 종료·완료·전환만) |
+| 모드 오버레이 | 시스템 프롬프트에 짧은 활동 규칙 + `{{…}}` 상태 봉투 |
 | Z 캔드 | 위험·개인정보 키워드 → LLM 생략, 고정 거절 문장 |
 | J/K TTS | 모드와 무관하게 기기 설정 보이스(ko-KR Chirp3) 고정 |
-| max_tokens·temperature | 모드별 소폭 조정 |
+| max_tokens·temperature | 활동별 소폭 조정 |
 
-시리얼: `mode: A-play → J-en`, `mode: active=J-en sticky=4` 등으로 확인.  
+자세한 상태·VAD·검증: [conversation-state.md](./conversation-state.md).  
+시리얼: `conv: turn=… act=en topic=강아지`, `act: free → en` 등.  
 
 ---
 

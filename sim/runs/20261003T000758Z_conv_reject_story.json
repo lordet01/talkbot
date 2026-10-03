@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "../sim/scenarios/conv_reject_story.json",
+    "name": "conv_reject_story"
+  },
+  "turns": [
+    {
+      "user": "영어 할까?",
+      "assistant": "좋아! 영어로 말해볼까?",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 789,
+      "activity": "en",
+      "topic": "",
+      "expect": "yn",
+      "intent": "act_change"
+    },
+    {
+      "user": "싫어",
+      "assistant": "알았어. 다른 거 할까?",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 747,
+      "activity": "en",
+      "topic": "",
+      "expect": "none",
+      "intent": "reject"
+    },
+    {
+      "user": "공룡 이야기 해줘",
+      "assistant": "옛날 옛적, 작은 공룡 토미는 친구를 찾아 숲 속을 모험했어요.",
+      "mode": "F-story",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 667,
+      "activity": "story",
+      "topic": "topic",
+      "expect": "cont",
+      "intent": "act_change"
+    },
+    {
+      "user": "그다음?",
+      "assistant": "다음에 토미는 큰 바위 아래서 놀라운 친구를 만날 거야.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": true,
+      "latency_ms": 906,
+      "activity": "free",
+      "topic": "story",
+      "expect": "cont",
+      "intent": "continue"
+    },
+    {
+      "user": "그다음?",
+      "assistant": "토미는 바위 아래에서 반짝이는 작은 새를 발견했어요.",
+      "mode": "A-play",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 3687,
+      "activity": "free",
+      "topic": "story",
+      "expect": "cont",
+      "intent": "other"
+    }
+  ]
+}

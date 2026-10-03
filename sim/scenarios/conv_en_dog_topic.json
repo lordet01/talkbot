@@ -1,0 +1,11 @@
+{
+  "name": "conv_en_dog_topic",
+  "description": "EN vocab then 강아지는? stays EN (topic only)",
+  "child_lines": [
+    "영어 게임 하자",
+    "응",
+    "사과",
+    "강아지는?",
+    "아니 고양이"
+  ]
+}
