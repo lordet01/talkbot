@@ -10,7 +10,7 @@ description: >-
 # Talkbot conversation simulation
 
 Voice hardware is too slow for prompt iteration. Use the **text simulator** that mirrors
-firmware chat modes + system prompt + Groq LLM, then fix awkwardness and re-run.
+firmware chat modes + system prompt + Gemini Flash-Lite, then fix awkwardness and re-run.
 
 ## When to use
 
@@ -22,7 +22,7 @@ firmware chat modes + system prompt + Groq LLM, then fix awkwardness and re-run.
 
 | Path | Role |
 |------|------|
-| `sim/dino_brain.py` | Firmware-mirror: ConvState, envelope, history, Groq chat |
+| `sim/dino_brain.py` | Firmware-mirror: ConvState, envelope, history, Gemini chat |
 | `sim/conv_state.py` | Deterministic activity/topic/intent (mirrors chat_modes.h) |
 | `sim/test_conv_state.py` | No-API state transition tests |
 | `sim/run_sim.py` | Scripted + free long-turn runner |
@@ -60,7 +60,7 @@ python3 sim/run_sim.py --free --turns 16 --seed "영어 공부하자"
 python3 sim/critique.py sim/runs/<latest>.json
 ```
 
-Needs `GROQ_API` in repo `.env` (same as firmware).
+Needs `GOOGLE_API` in repo `.env` (same Gemini key as firmware LLM). Child-side sim still uses `GROQ_API` if the runner generates kid lines.
 
 ### Keep mirror in sync
 

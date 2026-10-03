@@ -1,12 +1,12 @@
 /**
  * talkbot: Groq STT -> LLM -> Google TTS 음성 챗봇 (ESP32-S3 + ReSpeaker Lite)
  *
- * I2S 마이크 녹음 -> Groq Whisper STT(ko) -> Groq Chat -> Google Cloud TTS(ko 여성) -> I2S
+ * I2S 마이크 녹음 -> Groq Whisper STT(ko) -> Gemini Flash-Lite -> Google Cloud TTS(ko 여성) -> I2S
  *
  * 사전 준비:
  *   1. .env 에 GROQ_API, GOOGLE_API 설정 (WIFI_* 는 선택 — 없어도 AP 포털로 설정)
  *   2. ./scripts/sync_secrets.sh
- *   3. Cloud Console 에서 Cloud Text-to-Speech API 사용 설정
+ *   3. Cloud Console: Text-to-Speech + Generative Language API (Gemini)
  *   4. ./scripts/upload_sketch.sh 05_groq_voice_chat
  *
  * Wi-Fi: 부팅 시 SoftAP "Talkbot-Setup" + http://192.168.4.1
@@ -44,13 +44,16 @@
 
 static const char* GROQ_HOST = "api.groq.com";
 static const uint16_t GROQ_PORT = 443;
+static const char* GEMINI_HOST = "generativelanguage.googleapis.com";
+static const uint16_t GEMINI_PORT = 443;
 static const char* GOOGLE_TTS_HOST = "texttospeech.googleapis.com";
 static const uint16_t GOOGLE_TTS_PORT = 443;
 
 static const char* STT_MODEL = "whisper-large-v3-turbo";
-// kimi-k2 / qwen3.6 removed or not on this account; gpt-oss-20b is available + fast.
-static const char* LLM_MODEL = "openai/gpt-oss-20b";
-static const char* LLM_REASONING_EFFORT = "low";  // gpt-oss: low|medium|high (not "none")
+// Google AI Studio free Flash-Lite. Same GOOGLE_API_KEY as Chirp3 TTS.
+static const char* LLM_MODEL = "gemini-2.5-flash-lite";
+static const char* GROQ_LLM_MODEL = "openai/gpt-oss-20b";
+static const char* GROQ_LLM_REASONING = "low";
 static const char* TTS_MODEL = "canopylabs/orpheus-v1-english";  // English fallback only
 static const char* TTS_VOICE = "hannah";
 static const char* TTS_FALLBACK_VOICE = "Brian";
@@ -221,6 +224,7 @@ void request_tts_preconnect();
 void request_tls_refresh();
 void request_tts_refresh();
 bool ensure_groq_tls(bool force_reconnect);
+bool ensure_gemini_tls(bool force_reconnect);
 bool ensure_tts_tls(bool force_reconnect);
 void stop_groq_tls();
 void stop_tts_tls();
@@ -473,6 +477,28 @@ void denoise_recording() {
   }
 }
 
+uint32_t groq_retry_wait_ms(const String& err) {
+  int idx = err.indexOf("Please try again in ");
+  uint32_t ms = 60000;
+  if (idx >= 0) {
+    String rest = err.substring(idx + 20);
+    int mpos = rest.indexOf('m');
+    int spos = rest.indexOf('s');
+    if (mpos >= 0 && (spos < 0 || mpos < spos)) {
+      ms = (uint32_t)(rest.substring(0, mpos).toFloat() * 60000.0f);
+      ms += (uint32_t)(rest.substring(mpos + 1).toFloat() * 1000.0f);
+    } else {
+      ms = (uint32_t)(rest.toFloat() * 1000.0f);
+    }
+  }
+  if (err.indexOf("per day") >= 0 || err.indexOf("(TPD)") >= 0 || err.indexOf("(RPD)") >= 0) {
+    if (ms < 120000) ms = 120000;
+  }
+  if (ms < 3000) ms = 3000;
+  if (ms > 6UL * 3600UL * 1000UL) ms = 6UL * 3600UL * 1000UL;
+  return ms + 1500;
+}
+
 bool stt_cooldown_active() {
   return millis() < stt_blocked_until_ms;
 }
@@ -490,24 +516,9 @@ void note_stt_rate_limit(int http_status, const uint8_t* body, size_t body_len) 
   if (http_status != 429 || !body || body_len == 0) return;
 
   String err((const char*)body, min(body_len, (size_t)512));
-  if (err.indexOf("requests per day") >= 0 || err.indexOf("(RPD)") >= 0) {
-    stt_blocked_until_ms = millis() + STT_DAILY_LIMIT_BACKOFF_MS;
-    Serial.printf("stt: daily limit — backing off %us (calls=%u)\n",
-                  (unsigned)(STT_DAILY_LIMIT_BACKOFF_MS / 1000), stt_call_count);
-    return;
-  }
-
-  int idx = err.indexOf("Please try again in ");
-  if (idx >= 0) {
-    float sec = err.substring(idx + 20).toFloat();
-    uint32_t wait_ms = (uint32_t)(sec * 1000.0f) + 1000;
-    stt_blocked_until_ms = millis() + wait_ms;
-    Serial.printf("stt: rate limited — wait %us (calls=%u)\n", wait_ms / 1000, stt_call_count);
-    return;
-  }
-
-  stt_blocked_until_ms = millis() + 60000;
-  Serial.println("stt: rate limited — wait 60s");
+  uint32_t wait_ms = groq_retry_wait_ms(err);
+  stt_blocked_until_ms = millis() + wait_ms;
+  Serial.printf("stt: rate limited — wait %us (calls=%u)\n", wait_ms / 1000, stt_call_count);
 }
 
 bool recording_has_speech() {
@@ -971,6 +982,10 @@ bool record_utterance() {
 // --- HTTP / Groq ---
 
 static const uint32_t GROQ_TLS_MAX_IDLE_MS = 12000;
+static const uint8_t TLS_HOST_NONE = 0;
+static const uint8_t TLS_HOST_GROQ = 1;
+static const uint8_t TLS_HOST_GEMINI = 2;
+static uint8_t secure_tls_host = TLS_HOST_NONE;
 
 // Runs on core 0. Opens TLS early while core 1 records.
 // secure_client uses net_mutex; tts_client uses tts_connecting only.
@@ -992,10 +1007,12 @@ void net_task(void* /*arg*/) {
             uint32_t t0 = millis();
             if (secure_client->connect(GROQ_HOST, GROQ_PORT)) {
               groq_tls_last_ok_ms = millis();
+              secure_tls_host = TLS_HOST_GROQ;
               Serial.printf("tls: preconnected in %ums (overlapped with speech)\n",
                             (unsigned)(millis() - t0));
             } else {
               Serial.println("tls: preconnect failed");
+              secure_tls_host = TLS_HOST_NONE;
             }
           }
         }
@@ -1057,6 +1074,7 @@ void stop_groq_tls() {
     secure_client->stop();
   }
   groq_tls_last_ok_ms = 0;
+  secure_tls_host = TLS_HOST_NONE;
 }
 
 void stop_tts_tls() {
@@ -1074,25 +1092,60 @@ void stop_tts_tls() {
 bool ensure_groq_tls(bool force_reconnect) {
   if (!connect_wifi(true)) return false;
 
+  bool wrong_host = secure_tls_host != TLS_HOST_GROQ;
   bool stale = groq_tls_last_ok_ms > 0 &&
                (millis() - groq_tls_last_ok_ms > TLS_STALE_REFRESH_MS);
-  if (secure_client->connected() && !force_reconnect && !stale && groq_tls_last_ok_ms > 0 &&
-      millis() - groq_tls_last_ok_ms < GROQ_TLS_MAX_IDLE_MS) {
+  if (secure_client->connected() && !force_reconnect && !wrong_host && !stale &&
+      groq_tls_last_ok_ms > 0 && millis() - groq_tls_last_ok_ms < GROQ_TLS_MAX_IDLE_MS) {
     return true;
   }
   if (secure_client->connected()) {
     secure_client->stop();
+    secure_tls_host = TLS_HOST_NONE;
   }
 
-  Serial.println(force_reconnect || stale ? "tls: reconnect..." : "tls: connect...");
+  Serial.println(force_reconnect || stale || wrong_host ? "tls: reconnect groq..." : "tls: connect groq...");
   uint32_t t0 = millis();
   if (!secure_client->connect(GROQ_HOST, GROQ_PORT)) {
     Serial.println("ERR: TLS connect failed");
     groq_tls_last_ok_ms = 0;
+    secure_tls_host = TLS_HOST_NONE;
     return false;
   }
-  Serial.printf("tls: connected in %ums\n", (unsigned)(millis() - t0));
+  Serial.printf("tls: groq connected in %ums\n", (unsigned)(millis() - t0));
   groq_tls_last_ok_ms = millis();
+  secure_tls_host = TLS_HOST_GROQ;
+  return true;
+}
+
+bool ensure_gemini_tls(bool force_reconnect) {
+  if (!connect_wifi(true)) return false;
+  tls_preconnect_req = false;  // do not steal socket back to Groq mid-stream
+
+  bool wrong_host = secure_tls_host != TLS_HOST_GEMINI;
+  bool stale = groq_tls_last_ok_ms > 0 &&
+               (millis() - groq_tls_last_ok_ms > TLS_STALE_REFRESH_MS);
+  if (secure_client->connected() && !force_reconnect && !wrong_host && !stale &&
+      groq_tls_last_ok_ms > 0 && millis() - groq_tls_last_ok_ms < GROQ_TLS_MAX_IDLE_MS) {
+    return true;
+  }
+  if (secure_client->connected()) {
+    secure_client->stop();
+    secure_tls_host = TLS_HOST_NONE;
+  }
+
+  Serial.println(force_reconnect || stale || wrong_host ? "tls: reconnect gemini..."
+                                                       : "tls: connect gemini...");
+  uint32_t t0 = millis();
+  if (!secure_client->connect(GEMINI_HOST, GEMINI_PORT)) {
+    Serial.println("ERR: Gemini TLS connect failed");
+    groq_tls_last_ok_ms = 0;
+    secure_tls_host = TLS_HOST_NONE;
+    return false;
+  }
+  Serial.printf("tls: gemini connected in %ums\n", (unsigned)(millis() - t0));
+  groq_tls_last_ok_ms = millis();
+  secure_tls_host = TLS_HOST_GEMINI;
   return true;
 }
 
@@ -1138,6 +1191,14 @@ void groq_write_headers_on(WiFiClientSecure* client, const char* content_type, s
 
 void groq_write_headers(const char* content_type, size_t content_length) {
   groq_write_headers_on(secure_client, content_type, content_length);
+}
+
+void gemini_write_headers(size_t content_length) {
+  secure_client->printf("Host: %s\r\n", GEMINI_HOST);
+  secure_client->printf("x-goog-api-key: %s\r\n", active_google_key());
+  secure_client->print("Content-Type: application/json\r\n");
+  secure_client->print("Connection: close\r\n");
+  secure_client->printf("Content-Length: %u\r\n\r\n", (unsigned)content_length);
 }
 
 void groq_after_response(bool ok, bool keep_alive) {
@@ -1538,26 +1599,16 @@ static bool tts_has_speakable_content(const String& s) {
   return false;
 }
 
-static String extract_sse_delta_content(const String& data_line) {
-  // data: {...}  or data:[DONE]
-  if (!data_line.startsWith("data:")) return "";
-  String payload = data_line.substring(5);
-  payload.trim();
-  if (payload.length() == 0 || payload == "[DONE]") return "";
-
-  // Fast path: look for "content":"..." without full JSON parse (ArduinoJson
-  // on every tiny delta is expensive on ESP32).
-  int key = payload.indexOf("\"content\"");
-  if (key < 0) return "";
-  int colon = payload.indexOf(':', key + 9);
+static String extract_json_quoted_field(const String& payload, const char* key, int key_len) {
+  int k = payload.indexOf(key);
+  if (k < 0) return "";
+  int colon = payload.indexOf(':', k + key_len);
   if (colon < 0) return "";
-  int q1 = payload.indexOf('"', colon + 1);
-  if (q1 < 0) return "";
-  // Handle null content
   String after = payload.substring(colon + 1);
   after.trim();
-  if (after.startsWith("null")) return "";
-
+  if (!after.startsWith("\"")) return "";  // skip objects / null
+  int q1 = payload.indexOf('"', colon + 1);
+  if (q1 < 0) return "";
   String out;
   out.reserve(32);
   for (size_t i = (size_t)q1 + 1; i < payload.length(); i++) {
@@ -1570,7 +1621,6 @@ static String extract_sse_delta_content(const String& data_line) {
       else if (n == 'r') out += '\r';
       else if (n == '"' || n == '\\' || n == '/') out += n;
       else if (n == 'u' && i + 4 < payload.length()) {
-        // Skip \uXXXX — rare in Korean UTF-8 streams from Groq
         i += 4;
       } else {
         out += n;
@@ -1580,6 +1630,19 @@ static String extract_sse_delta_content(const String& data_line) {
     }
   }
   return out;
+}
+
+static String extract_sse_delta_content(const String& data_line) {
+  // Gemini SSE uses "text"; Groq fallback uses "content".
+  String payload = data_line;
+  if (payload.startsWith("data:")) {
+    payload = payload.substring(5);
+    payload.trim();
+  }
+  if (payload.length() == 0 || payload == "[DONE]") return "";
+  String t = extract_json_quoted_field(payload, "\"text\"", 6);
+  if (t.length() > 0) return t;
+  return extract_json_quoted_field(payload, "\"content\"", 9);
 }
 
 // SSE chat: parse optional {{…}} state envelope, then speak sentences as they complete.
@@ -1641,7 +1704,7 @@ bool groq_chat(const String& user_text, String& reply) {
     return ok;
   }
 
-  if (!ensure_groq_tls(false)) {
+  if (!ensure_gemini_tls(false)) {
     g_conv = conv_snapshot;  // network fail — do not keep partial intent side-effects as "heard"
     conv_sync_legacy(g_conv, g_chat_mode);
     tts_lang_override = nullptr;
@@ -1663,64 +1726,62 @@ bool groq_chat(const String& user_text, String& reply) {
   system_prompt += chat_mode_overlay(g_chat_mode.mode);
 
   JsonDocument doc;
-  JsonArray messages = doc["messages"].to<JsonArray>();
-  JsonObject sys = messages.add<JsonObject>();
-  sys["role"] = "system";
-  sys["content"] = system_prompt;
+  JsonObject si = doc["systemInstruction"].to<JsonObject>();
+  JsonArray si_parts = si["parts"].to<JsonArray>();
+  JsonObject si_p = si_parts.add<JsonObject>();
+  si_p["text"] = system_prompt;
+
+  JsonArray contents = doc["contents"].to<JsonArray>();
+  auto add_turn = [&](const char* role, const char* text) {
+    JsonObject o = contents.add<JsonObject>();
+    o["role"] = role;
+    JsonArray parts = o["parts"].to<JsonArray>();
+    JsonObject p = parts.add<JsonObject>();
+    p["text"] = text;
+  };
 
   // Pattern few-shots with envelope (not a lexicon).
   if (g_conv.activity == ACT_EN) {
-    auto shot = [&](const char* role, const char* content) {
-      JsonObject o = messages.add<JsonObject>();
-      o["role"] = role;
-      o["content"] = content;
-    };
-    shot("user", "문제 내줘");
-    shot("assistant", "{{a=en;t=사과;e=word;p=ask;h=0;d=ask;x=Apple;f=}}사과는 영어로 뭐야?");
-    shot("user", "사과");
-    shot("assistant", "{{a=en;t=사과;e=word;p=ask;h=0;d=ans;x=Apple;f=}}Apple!");
-    shot("user", "배는 영어로 뭐야");
-    shot("assistant", "{{a=en;t=배;e=word;p=ask;h=0;d=ans;x=Boat;f=}}Boat!");
-    shot("user", "아니 과일 배");
-    shot("assistant", "{{a=en;t=배;e=word;p=ask;h=0;d=corr;x=Pear;f=}}Pear!");
-    shot("user", "아니 니가 해");
-    shot("assistant", "{{a=en;t=;e=open;p=play;h=0;d=ask;x=;f=}}그럼 네가 말해. 뭐를 영어로 할까?");
-    shot("user", "몰라");
-    shot("assistant", "{{a=en;t=사과;e=word;p=hint;h=1;d=hint;x=Apple;f=}}에, 에이로 시작해.");
-    shot("user", "apple 한국말로?");
-    shot("assistant", "{{a=en;t=apple;e=word;p=ask;h=0;d=ans;x=;f=}}사과!");
+    add_turn("user", "문제 내줘");
+    add_turn("model", "{{a=en;t=사과;e=word;p=ask;h=0;d=ask;x=Apple;f=}}사과는 영어로 뭐야?");
+    add_turn("user", "사과");
+    add_turn("model", "{{a=en;t=사과;e=word;p=ask;h=0;d=ans;x=Apple;f=}}Apple!");
+    add_turn("user", "배는 영어로 뭐야");
+    add_turn("model", "{{a=en;t=배;e=word;p=ask;h=0;d=ans;x=Boat;f=}}Boat!");
+    add_turn("user", "아니 과일 배");
+    add_turn("model", "{{a=en;t=배;e=word;p=ask;h=0;d=corr;x=Pear;f=}}Pear!");
+    add_turn("user", "아니 니가 해");
+    add_turn("model", "{{a=en;t=;e=open;p=play;h=0;d=ask;x=;f=}}그럼 네가 말해. 뭐를 영어로 할까?");
+    add_turn("user", "몰라");
+    add_turn("model", "{{a=en;t=사과;e=word;p=hint;h=1;d=hint;x=Apple;f=}}에, 에이로 시작해.");
+    add_turn("user", "apple 한국말로?");
+    add_turn("model", "{{a=en;t=apple;e=word;p=ask;h=0;d=ans;x=;f=}}사과!");
   } else if (g_conv.activity == ACT_ZH) {
-    auto shot = [&](const char* role, const char* content) {
-      JsonObject o = messages.add<JsonObject>();
-      o["role"] = role;
-      o["content"] = content;
-    };
-    shot("user", "안녕이 중국어로 뭐야");
-    shot("assistant", "{{a=zh;t=안녕;e=word;p=ask;h=0;d=ans;x=;f=}}你好!");
-    shot("user", "그러면 고마워는?");
-    shot("assistant", "{{a=zh;t=고마워;e=word;p=ask;h=0;d=ans;x=;f=}}谢谢!");
+    add_turn("user", "안녕이 중국어로 뭐야");
+    add_turn("model", "{{a=zh;t=안녕;e=word;p=ask;h=0;d=ans;x=;f=}}你好!");
+    add_turn("user", "그러면 고마워는?");
+    add_turn("model", "{{a=zh;t=고마워;e=word;p=ask;h=0;d=ans;x=;f=}}谢谢!");
   }
 
   for (uint8_t i = 0; i < g_chat_hist_n; i++) {
-    JsonObject m = messages.add<JsonObject>();
-    m["role"] = (g_chat_hist[i].role == 'a') ? "assistant" : "user";
-    m["content"] = g_chat_hist[i].content;
+    add_turn((g_chat_hist[i].role == 'a') ? "model" : "user", g_chat_hist[i].content.c_str());
   }
   Serial.printf("hist: %u msgs\n", (unsigned)g_chat_hist_n);
 
-  doc["model"] = LLM_MODEL;
-  doc["max_tokens"] = chat_mode_max_tokens(g_chat_mode.mode);
-  doc["temperature"] = chat_mode_temperature(g_chat_mode.mode);
-  doc["reasoning_effort"] = LLM_REASONING_EFFORT;
-  doc["stream"] = true;
+  JsonObject gc = doc["generationConfig"].to<JsonObject>();
+  gc["maxOutputTokens"] = chat_mode_max_tokens(g_chat_mode.mode);
+  gc["temperature"] = chat_mode_temperature(g_chat_mode.mode);
+  JsonObject think = gc["thinkingConfig"].to<JsonObject>();
+  think["thinkingBudget"] = 0;
 
   String body;
   serializeJson(doc, body);
-  Serial.printf("llm: request model=%s act=%s reasoning=%s user=\"%s\"\n", LLM_MODEL,
-                activity_name(g_conv.activity), LLM_REASONING_EFFORT, user_text.c_str());
+  Serial.printf("llm: request model=%s act=%s user=\"%s\"\n", LLM_MODEL,
+                activity_name(g_conv.activity), user_text.c_str());
 
-  secure_client->printf("POST /openai/v1/chat/completions HTTP/1.1\r\n");
-  groq_write_headers("application/json", body.length());
+  secure_client->printf(
+      "POST /v1beta/models/%s:streamGenerateContent?alt=sse HTTP/1.1\r\n", LLM_MODEL);
+  gemini_write_headers(body.length());
   secure_client->print(body);
   uint32_t t_req_sent = millis();
 
@@ -1743,36 +1804,126 @@ bool groq_chat(const String& user_text, String& reply) {
   bool chunked = false;
   bool keep_alive = true;
   int content_length = -1;
-  while (secure_client->connected() || secure_client->available()) {
-    String line = secure_client->readStringUntil('\n');
-    line.trim();
-    if (line.length() == 0) break;
-    if (line.startsWith("Transfer-Encoding:") || line.startsWith("transfer-encoding:")) {
-      if (line.indexOf("chunked") >= 0) chunked = true;
-    } else if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
-      content_length = line.substring(15).toInt();
-    } else if (line.startsWith("Connection:") || line.startsWith("connection:")) {
-      String lower = line;
-      lower.toLowerCase();
-      if (lower.indexOf("close") >= 0) keep_alive = false;
+  auto read_llm_headers = [&]() {
+    chunked = false;
+    keep_alive = true;
+    content_length = -1;
+    while (secure_client->connected() || secure_client->available()) {
+      String line = secure_client->readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) break;
+      if (line.startsWith("Transfer-Encoding:") || line.startsWith("transfer-encoding:")) {
+        if (line.indexOf("chunked") >= 0) chunked = true;
+      } else if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
+        content_length = line.substring(15).toInt();
+      } else if (line.startsWith("Connection:") || line.startsWith("connection:")) {
+        String lower = line;
+        lower.toLowerCase();
+        if (lower.indexOf("close") >= 0) keep_alive = false;
+      }
     }
-  }
+  };
+  read_llm_headers();
   Serial.printf("llm: headers in %ums (HTTP %d)\n", (unsigned)(millis() - t_req_sent), status);
 
   if (status != 200) {
     Serial.printf("ERR: LLM HTTP %d\n", status);
+    String err_body;
+    err_body.reserve(512);
     uint32_t t0 = millis();
     while (secure_client->available() && millis() - t0 < 2000) {
-      Serial.write(secure_client->read());
+      char c = (char)secure_client->read();
+      Serial.write(c);
+      if (err_body.length() < 500) err_body += c;
     }
     Serial.println();
-    pop_last_chat_message_if_role("user");
-    g_conv = conv_snapshot;
-    conv_sync_legacy(g_conv, g_chat_mode);
-    groq_after_response(false, false);
-    tts_lang_override = nullptr;
-    tts_voice_override = nullptr;
-    return false;
+
+    bool groq_ok = false;
+    if (status == 403) {
+      Serial.println("llm: Gemini API off — Groq fallback");
+      groq_after_response(false, false);
+      if (ensure_groq_tls(true)) {
+        JsonDocument gdoc;
+        JsonArray messages = gdoc["messages"].to<JsonArray>();
+        auto add_oa = [&](const char* role, const char* text) {
+          JsonObject o = messages.add<JsonObject>();
+          o["role"] = role;
+          o["content"] = text;
+        };
+        add_oa("system", system_prompt.c_str());
+        if (g_conv.activity == ACT_EN) {
+          add_oa("user", "문제 내줘");
+          add_oa("assistant", "{{a=en;t=사과;e=word;p=ask;h=0;d=ask;x=Apple;f=}}사과는 영어로 뭐야?");
+          add_oa("user", "사과");
+          add_oa("assistant", "{{a=en;t=사과;e=word;p=ask;h=0;d=ans;x=Apple;f=}}Apple!");
+          add_oa("user", "배는 영어로 뭐야");
+          add_oa("assistant", "{{a=en;t=배;e=word;p=ask;h=0;d=ans;x=Boat;f=}}Boat!");
+          add_oa("user", "아니 과일 배");
+          add_oa("assistant", "{{a=en;t=배;e=word;p=ask;h=0;d=corr;x=Pear;f=}}Pear!");
+          add_oa("user", "아니 니가 해");
+          add_oa("assistant", "{{a=en;t=;e=open;p=play;h=0;d=ask;x=;f=}}그럼 네가 말해. 뭐를 영어로 할까?");
+          add_oa("user", "몰라");
+          add_oa("assistant", "{{a=en;t=사과;e=word;p=hint;h=1;d=hint;x=Apple;f=}}에, 에이로 시작해.");
+          add_oa("user", "apple 한국말로?");
+          add_oa("assistant", "{{a=en;t=apple;e=word;p=ask;h=0;d=ans;x=;f=}}사과!");
+        } else if (g_conv.activity == ACT_ZH) {
+          add_oa("user", "안녕이 중국어로 뭐야");
+          add_oa("assistant", "{{a=zh;t=안녕;e=word;p=ask;h=0;d=ans;x=;f=}}你好!");
+          add_oa("user", "그러면 고마워는?");
+          add_oa("assistant", "{{a=zh;t=고마워;e=word;p=ask;h=0;d=ans;x=;f=}}谢谢!");
+        }
+        for (uint8_t i = 0; i < g_chat_hist_n; i++) {
+          add_oa((g_chat_hist[i].role == 'a') ? "assistant" : "user", g_chat_hist[i].content.c_str());
+        }
+        gdoc["model"] = GROQ_LLM_MODEL;
+        gdoc["max_tokens"] = chat_mode_max_tokens(g_chat_mode.mode);
+        gdoc["temperature"] = chat_mode_temperature(g_chat_mode.mode);
+        gdoc["reasoning_effort"] = GROQ_LLM_REASONING;
+        gdoc["stream"] = true;
+        String gbody;
+        serializeJson(gdoc, gbody);
+        Serial.printf("llm: fallback model=%s\n", GROQ_LLM_MODEL);
+        secure_client->printf("POST /openai/v1/chat/completions HTTP/1.1\r\n");
+        groq_write_headers("application/json", gbody.length());
+        secure_client->print(gbody);
+        t_req_sent = millis();
+        status_line = secure_client->readStringUntil('\n');
+        status_line.trim();
+        if (status_line.startsWith("HTTP/")) {
+          status = status_line.substring(9, 12).toInt();
+          read_llm_headers();
+          Serial.printf("llm: groq headers in %ums (HTTP %d)\n",
+                        (unsigned)(millis() - t_req_sent), status);
+          groq_ok = (status == 200);
+        }
+        if (!groq_ok) {
+          Serial.printf("ERR: Groq fallback HTTP %d\n", status);
+          t0 = millis();
+          while (secure_client->available() && millis() - t0 < 1500) {
+            Serial.write((char)secure_client->read());
+          }
+          Serial.println();
+        }
+      }
+    }
+
+    if (!groq_ok) {
+      pop_last_chat_message_if_role("user");
+      g_conv = conv_snapshot;
+      conv_sync_legacy(g_conv, g_chat_mode);
+      groq_after_response(false, false);
+      tts_lang_override = nullptr;
+      tts_voice_override = nullptr;
+      uint32_t wait_ms = (status == 429) ? groq_retry_wait_ms(err_body) : 20000;
+      stt_blocked_until_ms = millis() + wait_ms;
+      Serial.printf("llm: unavailable HTTP %d — wait %us, speaking pause\n", status,
+                    wait_ms / 1000);
+      reply = "잠깐만. 조금 이따 하자.";
+      speak_session_begin();
+      speak_text_ex(reply, true);
+      speak_session_end();
+      return true;
+    }
   }
 
   BodyReader br = {secure_client, chunked,
@@ -1942,13 +2093,9 @@ bool groq_chat(const String& user_text, String& reply) {
   }
 
   speak_session_end();
-  // Early abort leaves unread SSE bytes — drop socket so next turn is clean.
-  if (spoke_any && !br.done) {
-    stop_groq_tls();
-    request_tls_preconnect();
-  } else {
-    groq_after_response(true, keep_alive);
-  }
+  // Gemini socket cannot be reused for Groq STT — always drop, then preconnect Groq.
+  stop_groq_tls();
+  request_tls_preconnect();
 
   tts_lang_override = nullptr;
   tts_voice_override = nullptr;
@@ -3554,7 +3701,7 @@ void setup() {
                   effective_tts_voice(), (unsigned)TTS_SAMPLE_RATE);
     Serial.println("tts fallback: Groq Orpheus (en) or StreamElements");
     Serial.printf("stt language: %s\n", STT_LANGUAGE);
-    Serial.printf("llm model: %s (reasoning=%s)\n", LLM_MODEL, LLM_REASONING_EFFORT);
+    Serial.printf("llm model: %s host=%s\n", LLM_MODEL, GEMINI_HOST);
     if (TTS_BOOT_TEST) {
       const char* boot = device_config_get().boot_phrase;
       if (!boot || !boot[0]) boot = "안녕, 난 디노야! 같이 놀자.";
@@ -3587,7 +3734,7 @@ void loop() {
     static uint32_t last_cooldown_log_ms = 0;
     uint32_t now = millis();
     if (now - last_cooldown_log_ms > 5000) {
-      Serial.printf("state: LISTEN blocked — stt cooldown %us (calls=%u)\n",
+      Serial.printf("state: LISTEN blocked — groq cooldown %us (calls=%u)\n",
                     stt_cooldown_remaining_ms() / 1000, stt_call_count);
       last_cooldown_log_ms = now;
     }

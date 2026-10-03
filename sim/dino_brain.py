@@ -1,4 +1,4 @@
-"""Text-only Dino brain — mirrors firmware conversation state + Groq LLM.
+"""Text-only Dino brain — mirrors firmware conversation state + Gemini Flash-Lite.
 
 Keep in sync with:
   arduino/05_groq_voice_chat/05_groq_voice_chat.ino  (SYSTEM_PROMPT, history)
@@ -68,8 +68,7 @@ SYSTEM_PROMPT = (
     "모드 이름·메뉴를 말하지 마."
 )
 
-LLM_MODEL = "openai/gpt-oss-20b"
-LLM_REASONING_EFFORT = "low"
+LLM_MODEL = "gemini-2.5-flash-lite"
 CHAT_HIST_MAX = 20
 
 MAX_TOKENS = {
@@ -152,21 +151,37 @@ class DinoBrain:
             self.history.pop()
 
     def groq_chat(self, messages: list[dict[str, str]], *, max_tokens: int, temperature: float) -> str:
-        body = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "reasoning_effort": LLM_REASONING_EFFORT,
-            "stream": False,
+        system_text = ""
+        contents: list[dict[str, Any]] = []
+        for m in messages:
+            role = m.get("role") or "user"
+            text = m.get("content") or ""
+            if role == "system":
+                system_text += text
+                continue
+            gem_role = "model" if role == "assistant" else "user"
+            contents.append({"role": gem_role, "parts": [{"text": text}]})
+        body: dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": {
+                "maxOutputTokens": max_tokens,
+                "temperature": temperature,
+                "thinkingConfig": {"thinkingBudget": 0},
+            },
         }
+        if system_text:
+            body["systemInstruction"] = {"parts": [{"text": system_text}]}
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.model}:generateContent"
+        )
         last_err: Exception | None = None
         for attempt in range(8):
             req = urllib.request.Request(
-                "https://api.groq.com/openai/v1/chat/completions",
+                url,
                 data=json.dumps(body).encode("utf-8"),
                 headers={
-                    "Authorization": f"Bearer {self.api_key}",
+                    "x-goog-api-key": self.api_key,
                     "Content-Type": "application/json",
                     "User-Agent": "talkbot-sim/1.0",
                 },
@@ -175,33 +190,22 @@ class DinoBrain:
             try:
                 with urllib.request.urlopen(req, timeout=60) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
-                msg = data["choices"][0]["message"]
-                text = (msg.get("content") or "").strip()
-                if not text and msg.get("reasoning"):
-                    raise RuntimeError("empty content (reasoning used all max_tokens)")
+                parts = (
+                    data.get("candidates", [{}])[0]
+                    .get("content", {})
+                    .get("parts", [])
+                )
+                text = "".join(p.get("text") or "" for p in parts).strip()
+                if not text:
+                    raise RuntimeError(f"empty Gemini content: {str(data)[:240]}")
                 return text
             except urllib.error.HTTPError as e:
                 detail = e.read().decode("utf-8", errors="replace")[:400]
                 last_err = RuntimeError(f"HTTP {e.code}: {detail}")
                 if e.code in (429, 502, 503, 520):
                     import time
-                    import re as _re
 
-                    wait = 2.0 * (attempt + 1)
-                    m = _re.search(r"try again in ([0-9.]+)s", detail)
-                    if m and "m" not in detail[m.start() : m.end() + 5]:
-                        wait = max(wait, float(m.group(1)) + 0.5)
-                    m2 = _re.search(r"try again in (\d+)m([0-9.]+)s", detail)
-                    if m2:
-                        wait = max(wait, int(m2.group(1)) * 60 + float(m2.group(2)) + 2)
-                    if "tokens per day" in detail or "TPD" in detail:
-                        wait = min(max(wait, 120.0), 200.0)
-                        if attempt >= 1:
-                            raise RuntimeError(
-                                f"daily token limit; retry later ({detail[:180]})"
-                            ) from e
-                    else:
-                        wait = min(wait, 90.0)
+                    wait = min(2.0 * (attempt + 1), 90.0)
                     print(f"  (rate-limit backoff {wait:.1f}s)", flush=True)
                     time.sleep(wait)
                     continue
@@ -428,10 +432,10 @@ def child_next_line(
 
 def make_brain() -> DinoBrain:
     env = load_env()
-    key = env.get("GROQ_API") or os.environ.get("GROQ_API") or ""
+    key = env.get("GOOGLE_API") or os.environ.get("GOOGLE_API") or ""
     if not key:
-        raise SystemExit("GROQ_API missing in .env")
-    model = env.get("GROQ_LLM_MODEL") or LLM_MODEL
+        raise SystemExit("GOOGLE_API missing in .env")
+    model = env.get("GEMINI_LLM_MODEL") or LLM_MODEL
     return DinoBrain(api_key=key, model=model)
 
 
