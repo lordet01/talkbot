@@ -7,7 +7,7 @@ final class TalkbotModel: ObservableObject {
     enum Phase: String { case idle, connecting, listening, thinking, speaking, failed }
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var caption = "안녕, 난 디노야"
-    @Published private(set) var expression: Expression = .warm
+    @Published private(set) var expression: TalkbotCore.Expression = .warm
     @Published private(set) var microphoneLevel: Float = 0
     @Published private(set) var latency = TurnLatency()
     @Published private(set) var errorMessage: String?

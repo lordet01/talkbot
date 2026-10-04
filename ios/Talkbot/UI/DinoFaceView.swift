@@ -4,7 +4,7 @@ import TalkbotCore
 struct DinoFaceView: View {
     let gaze: GazePoint
     let eyeContact: Bool
-    let expression: Expression
+    let expression: TalkbotCore.Expression
     let speaking: Bool
     let listening: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
