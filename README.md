@@ -61,6 +61,12 @@ talkbot = **듣고 답하고 말하는 파이프라인**
 보호자 제어판(QR/PWA): [`control-panel/`](control-panel/) — Cloudflare에 올리고 인형 바닥 QR로 즉시 연다.  
 `./scripts/deploy_control_panel.sh` → `.env`의 `CONTROL_PANEL_URL` 설정 → `./scripts/sync_secrets.sh`
 
+## Swift 스마트폰 앱
+
+[`ios/`](ios/)에 iPhone/iPad용 **디노 앱**을 추가했습니다. 가로 스탠드에서 실시간 음성 대화, 끼어들기, 연령별 어린이 대화 지침, 카메라 기반 눈맞춤과 표정을 제공합니다. 기존 ESP32 없이 휴대폰 자체로 동작합니다.
+
+`ios/Talkbot.xcodeproj`를 Xcode에서 열어 실행합니다. 보호자 설정에서 음성 API 연결 정보를 입력합니다. **1초 응답은 목표이며 네트워크·API에 따른 모든 턴 보장은 아닙니다.** 앱에서 실제 렌더 기준 지연 추정치와 초과 횟수를 확인할 수 있습니다. 설치·구조·검증은 [`ios/README.md`](ios/README.md)를 참고하세요.
+
 ## 설계 원칙
 
 - **엔진 먼저, 장식 나중** — 대화 루프가 안정되기 전에 기능을 늘리지 않는다.
@@ -73,7 +79,7 @@ talkbot = **듣고 답하고 말하는 파이프라인**
 
 - 범용 스마트폰 비서 대체
 - 긴 에세이·코드·검색 에이전트
-- 화면 중심 UI (리듬이의 인터페이스는 **목소리**)
+- ESP32 인형 자체의 화면 UI (Swift 앱은 별도의 화면 캐릭터를 제공)
 
 ## 성공의 모습
 

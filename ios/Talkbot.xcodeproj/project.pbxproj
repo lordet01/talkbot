@@ -1,0 +1,423 @@
+// !$*UTF8*$!
+{
+	"archiveVersion" = 1;
+	"classes" = {
+	};
+	"objectVersion" = 56;
+	"objects" = {
+		"BD9648DA21D29D0B87418CCE" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/App/TalkbotApp.swift";
+			"sourceTree" = "<group>";
+		};
+		"CD4A160D444F8F103DC93143" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/App/TalkbotModel.swift";
+			"sourceTree" = "<group>";
+		};
+		"4AD421550C711218E6B163E8" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Audio/AudioDuplex.swift";
+			"sourceTree" = "<group>";
+		};
+		"7E09FAB0F283A1478EF599BC" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Realtime/CredentialProvider.swift";
+			"sourceTree" = "<group>";
+		};
+		"CE944F036C1690A84CE32365" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Realtime/RealtimeClient.swift";
+			"sourceTree" = "<group>";
+		};
+		"31D1B1F48816E7B23BA78552" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Tracking/EyeContactTracker.swift";
+			"sourceTree" = "<group>";
+		};
+		"E2C8EC022C94E632B990F944" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/UI/CompanionView.swift";
+			"sourceTree" = "<group>";
+		};
+		"BDEC61AA5446DBB07A40BBBF" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/UI/DinoFaceView.swift";
+			"sourceTree" = "<group>";
+		};
+		"FB5E7A65A9243963E8031938" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/UI/ParentSettingsView.swift";
+			"sourceTree" = "<group>";
+		};
+		"CEEC936B3661E2980A4E08AD" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TalkbotCore/Sources/TalkbotCore/ConversationPolicy.swift";
+			"sourceTree" = "<group>";
+		};
+		"BAB75A4689BCC9138C61F94A" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TalkbotCore/Sources/TalkbotCore/GazeFilter.swift";
+			"sourceTree" = "<group>";
+		};
+		"545A5C3D66C57EED6D1108C5" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TalkbotCore/Sources/TalkbotCore/RealtimeProtocol.swift";
+			"sourceTree" = "<group>";
+		};
+		"016608B9BD7D1E7282C2DD8D" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TalkbotCore/Sources/TalkbotCore/TurnLatency.swift";
+			"sourceTree" = "<group>";
+		};
+		"B6CDB6E5D160E013280D3C68" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"path" = "Talkbot.app";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"797E92F9BC7CD81F430FA27D" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.framework";
+			"path" = "TalkbotCore.framework";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"00C45FD35CB0F9C5F764F070" = {
+			"isa" = "PBXGroup";
+			"children" = ("B6CDB6E5D160E013280D3C68", "797E92F9BC7CD81F430FA27D",);
+			"name" = "Products";
+			"sourceTree" = "<group>";
+		};
+		"CF8D0BD4B75E8C2C174692A5" = {
+			"isa" = "PBXGroup";
+			"children" = ("BD9648DA21D29D0B87418CCE", "CD4A160D444F8F103DC93143", "4AD421550C711218E6B163E8", "7E09FAB0F283A1478EF599BC", "CE944F036C1690A84CE32365", "31D1B1F48816E7B23BA78552", "E2C8EC022C94E632B990F944", "BDEC61AA5446DBB07A40BBBF", "FB5E7A65A9243963E8031938",);
+			"name" = "Talkbot";
+			"sourceTree" = "<group>";
+		};
+		"FC8F5A85394B0D5FF7E93AFA" = {
+			"isa" = "PBXGroup";
+			"children" = ("CEEC936B3661E2980A4E08AD", "BAB75A4689BCC9138C61F94A", "545A5C3D66C57EED6D1108C5", "016608B9BD7D1E7282C2DD8D",);
+			"name" = "TalkbotCore";
+			"sourceTree" = "<group>";
+		};
+		"DF891E785808226D241F246E" = {
+			"isa" = "PBXGroup";
+			"children" = ("CF8D0BD4B75E8C2C174692A5", "FC8F5A85394B0D5FF7E93AFA", "00C45FD35CB0F9C5F764F070",);
+			"sourceTree" = "<group>";
+		};
+		"8376A56EC916D8E7125A3ACE" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BD9648DA21D29D0B87418CCE";
+		};
+		"7219E576ACA22C1DAF879EA7" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "CD4A160D444F8F103DC93143";
+		};
+		"68D5AD372A197D8EBED38F49" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "4AD421550C711218E6B163E8";
+		};
+		"967A68BFD3E3FE1A7F086E96" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "7E09FAB0F283A1478EF599BC";
+		};
+		"A222A3FF245A7C9468CE62C2" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "CE944F036C1690A84CE32365";
+		};
+		"95700E75B4742C4FD64E9D2B" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "31D1B1F48816E7B23BA78552";
+		};
+		"86902AFFEEEF188E6F405FFE" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E2C8EC022C94E632B990F944";
+		};
+		"468804123508E812B5D9E1B6" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BDEC61AA5446DBB07A40BBBF";
+		};
+		"BF26C9B90681812B7E325C7D" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "FB5E7A65A9243963E8031938";
+		};
+		"3BE5C704148406E58FE0AB5F" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("8376A56EC916D8E7125A3ACE", "7219E576ACA22C1DAF879EA7", "68D5AD372A197D8EBED38F49", "967A68BFD3E3FE1A7F086E96", "A222A3FF245A7C9468CE62C2", "95700E75B4742C4FD64E9D2B", "86902AFFEEEF188E6F405FFE", "468804123508E812B5D9E1B6", "BF26C9B90681812B7E325C7D",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"DCB6C4AC5D5DBA9E6C460DBE" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "CEEC936B3661E2980A4E08AD";
+		};
+		"36978FA627AAE186707EB330" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BAB75A4689BCC9138C61F94A";
+		};
+		"BD093F7CF2CEB5305A7ABFB3" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "545A5C3D66C57EED6D1108C5";
+		};
+		"11A9A27AAECFA65A2D1E7F2B" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "016608B9BD7D1E7282C2DD8D";
+		};
+		"F94C513333E48157451A105F" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("DCB6C4AC5D5DBA9E6C460DBE", "36978FA627AAE186707EB330", "BD093F7CF2CEB5305A7ABFB3", "11A9A27AAECFA65A2D1E7F2B",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"73647DE41828CE7836E2AA40" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "797E92F9BC7CD81F430FA27D";
+		};
+		"CB416FA54C6F25DA0B8C2B9A" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "797E92F9BC7CD81F430FA27D";
+			"settings" = {
+				"ATTRIBUTES" = ("CodeSignOnCopy", "RemoveHeadersOnCopy",);
+			};
+		};
+		"5B9773D84493B3D713DB9AC0" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("73647DE41828CE7836E2AA40",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"1ECCA0A66973F9E1FCE68BCF" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"F0AB04EE052351C80F3286E9" = {
+			"isa" = "PBXCopyFilesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"dstPath" = "";
+			"dstSubfolderSpec" = 10;
+			"files" = ("CB416FA54C6F25DA0B8C2B9A",);
+			"name" = "Embed Frameworks";
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"C02F1309AF4906C92F1EAD44" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"877A6BA951A2EA0025A2ABE8" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_VERSION" = "5.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "16.0";
+				"SDKROOT" = "iphoneos";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+			};
+			"name" = "Debug";
+		};
+		"959134B361DD7E21ADEA3164" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_VERSION" = "5.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "16.0";
+				"SDKROOT" = "iphoneos";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+			"name" = "Release";
+		};
+		"247BF104A9AD002C539DA531" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("877A6BA951A2EA0025A2ABE8", "959134B361DD7E21ADEA3164",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"3CF6A4F2E05B3AAE7E2CBFEE" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_VERSION" = "5.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "16.0";
+				"SDKROOT" = "iphoneos";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "org.talkbot.companion";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"INFOPLIST_FILE" = "Talkbot/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"MARKETING_VERSION" = "0.2.0";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+			};
+			"name" = "Debug";
+		};
+		"23FB2CAEB38545C3793097DD" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_VERSION" = "5.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "16.0";
+				"SDKROOT" = "iphoneos";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "org.talkbot.companion";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"INFOPLIST_FILE" = "Talkbot/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"MARKETING_VERSION" = "0.2.0";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+			"name" = "Release";
+		};
+		"9EA62D25DFD1EFBA21F6DE7B" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("3CF6A4F2E05B3AAE7E2CBFEE", "23FB2CAEB38545C3793097DD",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"701F7798550A194E2BEE45AB" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_VERSION" = "5.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "16.0";
+				"SDKROOT" = "iphoneos";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "org.talkbot.core";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"DEFINES_MODULE" = "YES";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"SKIP_INSTALL" = "YES";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+			};
+			"name" = "Debug";
+		};
+		"8EEE7810075F95622C8C6667" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"SWIFT_VERSION" = "5.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "16.0";
+				"SDKROOT" = "iphoneos";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "org.talkbot.core";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"DEFINES_MODULE" = "YES";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"SKIP_INSTALL" = "YES";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+			"name" = "Release";
+		};
+		"61909332885250548DE1D1F0" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("701F7798550A194E2BEE45AB", "8EEE7810075F95622C8C6667",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"F11EED822EBD4996DAF631B0" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "61909332885250548DE1D1F0";
+			"buildPhases" = ("F94C513333E48157451A105F", "1ECCA0A66973F9E1FCE68BCF",);
+			"buildRules" = ();
+			"dependencies" = ();
+			"name" = "TalkbotCore";
+			"productName" = "TalkbotCore";
+			"productReference" = "797E92F9BC7CD81F430FA27D";
+			"productType" = "com.apple.product-type.framework";
+		};
+		"6AC0477C84C3384A0A879A84" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "98F54143AB4E86B28C3AFEE0";
+			"proxyType" = 1;
+			"remoteGlobalIDString" = "F11EED822EBD4996DAF631B0";
+			"remoteInfo" = "TalkbotCore";
+		};
+		"51B401C470CD096FAC2F4CC6" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "F11EED822EBD4996DAF631B0";
+			"targetProxy" = "6AC0477C84C3384A0A879A84";
+		};
+		"29C7B681C8D62CBAC94D51C0" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "9EA62D25DFD1EFBA21F6DE7B";
+			"buildPhases" = ("3BE5C704148406E58FE0AB5F", "5B9773D84493B3D713DB9AC0", "C02F1309AF4906C92F1EAD44", "F0AB04EE052351C80F3286E9",);
+			"buildRules" = ();
+			"dependencies" = ("51B401C470CD096FAC2F4CC6",);
+			"name" = "Talkbot";
+			"productName" = "Talkbot";
+			"productReference" = "B6CDB6E5D160E013280D3C68";
+			"productType" = "com.apple.product-type.application";
+		};
+		"98F54143AB4E86B28C3AFEE0" = {
+			"isa" = "PBXProject";
+			"attributes" = {
+				"LastUpgradeCheck" = "1600";
+				"TargetAttributes" = {
+					"29C7B681C8D62CBAC94D51C0" = {
+						"CreatedOnToolsVersion" = "16.0";
+					};
+					"F11EED822EBD4996DAF631B0" = {
+						"CreatedOnToolsVersion" = "16.0";
+					};
+				};
+			};
+			"buildConfigurationList" = "247BF104A9AD002C539DA531";
+			"compatibilityVersion" = "Xcode 14.0";
+			"developmentRegion" = "ko";
+			"hasScannedForEncodings" = 0;
+			"knownRegions" = ("ko", "en", "Base",);
+			"mainGroup" = "DF891E785808226D241F246E";
+			"productRefGroup" = "00C45FD35CB0F9C5F764F070";
+			"projectDirPath" = "";
+			"projectRoot" = "";
+			"targets" = ("29C7B681C8D62CBAC94D51C0", "F11EED822EBD4996DAF631B0",);
+		};
+	};
+	"rootObject" = "98F54143AB4E86B28C3AFEE0";
+}
