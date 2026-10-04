@@ -76,11 +76,11 @@ static constexpr size_t CONV_LEARN_ITEM_LEN = 28;
 static constexpr uint8_t CONV_CLARIFY_MAX = 3;
 
 struct ConvState {
-  Activity activity = ACT_FREE;
+  Activity activity = ACT_EN;
   char topic[CONV_TOPIC_LEN] = {0};
   DialogueAct last_act = DACT_ACK;
-  ExpectType expect = EXPECT_NONE;
-  ActivityPhase phase = PHASE_IDLE;
+  ExpectType expect = EXPECT_OPEN;
+  ActivityPhase phase = PHASE_PLAY;
   char fact[CONV_FACT_LEN] = {0};           // e.g. story character name
   char learn_item[CONV_LEARN_ITEM_LEN] = {0};
   char expect_ans[CONV_EXPECT_ANS_LEN] = {0};
@@ -112,7 +112,7 @@ enum : uint8_t {
 };
 struct ChatModeState {
   // Thin view used by older Serial prints; real state is ConvState.
-  ChatMode mode = ACT_FREE;
+  ChatMode mode = ACT_EN;
   uint8_t sticky = 0;  // unused (kept 0); no sticky expiry
   bool just_entered = false;
 };
@@ -335,7 +335,73 @@ inline Activity conv_detect_explicit_activity(const String& t) {
   return ACT_FREE;
 }
 
-// Soft topic extract for "X는?" / "그러면 X는?" while staying in activity.
+inline bool conv_en_is_quiz_ask(const String& t) {
+  String s = t;
+  s.toLowerCase();
+  return s.indexOf("quiz") >= 0 || s.indexOf("test me") >= 0 || s.indexOf("teach me") >= 0 ||
+         s.indexOf("how do you say") >= 0 || s.indexOf("문제") >= 0 || s.indexOf("영어 단어") >= 0;
+}
+
+inline bool conv_en_is_chatty(const String& t) {
+  String s = t;
+  s.toLowerCase();
+  s.trim();
+  if (s.startsWith("hi") || s.startsWith("hey") || s.startsWith("hello") || s.startsWith("yo")) {
+    return true;
+  }
+  if (s.indexOf("hear") >= 0 || s.indexOf("listen") >= 0) return true;
+  if (s.indexOf("can you") >= 0 || s.indexOf("are you") >= 0) return true;
+  if (s.indexOf("thank") >= 0) return true;
+  return false;
+}
+
+inline int conv_word_count(const String& t) {
+  int n = 0;
+  bool in = false;
+  for (size_t i = 0; i < t.length(); i++) {
+    char c = t[i];
+    if (c != ' ' && c != '\t') {
+      if (!in) {
+        n++;
+        in = true;
+      }
+    } else {
+      in = false;
+    }
+  }
+  return n;
+}
+
+inline bool conv_user_mentions_topic(const String& user, const char* topic) {
+  if (!topic || !topic[0]) return true;
+  String u = user;
+  String tp = topic;
+  u.toLowerCase();
+  tp.toLowerCase();
+  return u.indexOf(tp) >= 0;
+}
+
+// English class: do not treat every "?" as a vocab quiz. Follow the child.
+inline void conv_en_follow_child(ConvState& st, const String& user) {
+  if (st.activity == ACT_ZH || st.activity == ACT_HANGUL) st.activity = ACT_EN;
+  if (st.activity != ACT_EN) return;
+
+  bool chatty = conv_en_is_chatty(user);
+  bool quiz = conv_en_is_quiz_ask(user);
+  int words = conv_word_count(user);
+  bool one_word_answer = (st.expect == EXPECT_WORD && words <= 2 && !chatty && !quiz);
+
+  if (chatty || (words >= 3 && !quiz && !one_word_answer)) {
+    st.expect = EXPECT_OPEN;
+    st.phase = PHASE_PLAY;
+    if (chatty || !conv_user_mentions_topic(user, st.topic)) {
+      st.topic[0] = 0;
+      st.expect_ans[0] = 0;
+    }
+    if (chatty) st.last_intent = UINTENT_QUESTION;
+  }
+  if (strchr(st.topic, ' ')) st.topic[0] = 0;
+}
 inline bool conv_extract_topic_ellipsis(const String& t, char* out, size_t out_n) {
   String s = t;
   s.trim();
@@ -488,8 +554,8 @@ inline UtterIntent conv_pre_update(ConvState& st, const String& user_text) {
           chat_text_has(t, "하자") || chat_text_has(t, "할래") || chat_text_has(t, "해줘") ||
           chat_text_has(t, "놀이") || chat_text_has(t, "게임") || chat_text_has(t, "공부");
       // Topic ellipsis "강아지는?" while in EN must NOT become nature/free via 강아지.
-      bool ellipsis = (t.endsWith("?") || t.endsWith("？") || t.endsWith("는") ||
-                       t.endsWith("은") || chat_text_has(t, "그러면") || chat_text_has(t, "그럼"));
+      bool ellipsis = t.endsWith("는") || t.endsWith("은") || chat_text_has(t, "그러면") ||
+                      chat_text_has(t, "그럼") || t.endsWith("는?") || t.endsWith("은?");
       if (st.activity == ACT_EN || st.activity == ACT_ZH || st.activity == ACT_COUNT) {
         char topic_buf[CONV_TOPIC_LEN];
         if (ellipsis && conv_extract_topic_ellipsis(t, topic_buf, sizeof(topic_buf))) {
@@ -518,13 +584,19 @@ inline UtterIntent conv_pre_update(ConvState& st, const String& user_text) {
     }
   }
 
-  // Ellipsis topic update while staying in EN/ZH/COUNT.
+  // Ellipsis topic update: Korean "X는?" or "how do you say X" — not every English question.
   if (conv_activity_locked(st.activity) &&
       (st.activity == ACT_EN || st.activity == ACT_ZH || st.activity == ACT_COUNT)) {
+    bool ko_ellipsis = chat_text_has(t, "그러면") || chat_text_has(t, "그럼") ||
+                       t.endsWith("는?") || t.endsWith("은?");
+    bool en_say = false;
+    {
+      String low = t;
+      low.toLowerCase();
+      en_say = low.indexOf("how do you say") >= 0;
+    }
     char topic_buf[CONV_TOPIC_LEN];
-    if ((chat_text_has(t, "그러면") || chat_text_has(t, "그럼") || t.endsWith("?") ||
-         t.endsWith("는?") || t.endsWith("은?")) &&
-        conv_extract_topic_ellipsis(t, topic_buf, sizeof(topic_buf))) {
+    if ((ko_ellipsis || en_say) && conv_extract_topic_ellipsis(t, topic_buf, sizeof(topic_buf))) {
       conv_set_str(st.topic, sizeof(st.topic), topic_buf);
       st.last_intent = UINTENT_QUESTION;
       st.phase = PHASE_ASK;
@@ -562,7 +634,7 @@ inline void chat_mode_enter(ChatModeState& legacy, ChatMode next) {
 }
 
 inline String conv_state_prompt_line(const ConvState& st) {
-  String s = " [상태 activity=";
+  String s = " [state activity=";
   s += activity_name(st.activity);
   s += " topic=";
   s += st.topic[0] ? st.topic : "-";
@@ -610,71 +682,64 @@ inline String conv_state_prompt_line(const ConvState& st) {
 inline const char* chat_mode_overlay(ChatMode m) {
   switch (m) {
     case ACT_FREE:
-      return " [활동:자유] 짧게 받아쳐. 직전 말에 이어가. "
-             "같은 제안을 매 턴 반복하지 마. 질문은 필요할 때만 하나. "
-             "아이 소재를 이어가. 모드 이름·메뉴 금지.";
+      return " [play] Short English. Follow the child. No menus.";
     case ACT_DAY:
-      return " [활동:인사] 오늘 한 장면만. 하루 전체를 평가하지 마.";
+      return " [hello] One moment of today. Simple English.";
     case ACT_MEAL:
-      return " [활동:식사놀이] 같이 먹는 상상. 잔소리·강요 금지. 한두 짧은 문장.";
+      return " [meal play] Pretend food. No nagging. One short line.";
     case ACT_HYGIENE:
-      return " [활동:손씻기] 한 동작만. 예: '거품 퐁퐁!'";
+      return " [wash] One action. Example: Bubbles pop!";
     case ACT_EMO:
-      return " [활동:감정] 먼저 공감. 설교 금지. 질문 필요하면 하나만.";
+      return " [feelings] Kind English. One question max if needed.";
     case ACT_STORY:
-      return " [활동:이야기] 한 장면(문장 하나)만 말하고 멈춰. "
-             "'그다음' 전에 이어가지 마. 놀이 제안으로 새지 마.";
+      return " [story] One beat, then stop. Wait for next.";
     case ACT_SONG:
-      return " [활동:노래] 한 소절만.";
+      return " [song] One short line of a song.";
     case ACT_COUNT:
-      return " [활동:세기] 같이 세기. 틀리면 힌트. 시험처럼 몰아붙이지 마.";
+      return " [count] Count together in English. Hint if stuck.";
     case ACT_HANGUL:
-      return " [활동:한글] 짧은 따라 말하기. 문법 강의 금지.";
+      return " [letters] Keep English. Spell a short word if they want letters.";
     case ACT_EN:
-      return " [활동:영어놀이] 한 턴에 영어 단어 하나. "
-             "아이가 한글 단어를 말하면 영어 한 마디만. 아이가 영어를 말하면 한글 뜻 한 마디만. "
-             "'문제 내'면 한글 단어 하나만 물어(예: 사과는?). "
-             "보기 나열 금지. Apple, Train, Boat, Dog 를 한꺼번에 말하지 마. "
-             "예시에 나온 단어를 문제로 다시 쓰지 마. 괄호·발음기호 금지. "
-             "'아니 네가 해'면 영어 정답을 말하지 마. 출제를 넘기거나 한글 단어 하나만 물어. "
-             "강아지·사과는 topic일 뿐 활동을 바꾸지 마.";
+      return " [english chat] Follow the child. Greet. Answer Can you hear. "
+             "Do not quiz unless they asked. Never invent a seen animal. "
+             "Korean word in -> English word out. One short sentence.";
     case ACT_ZH:
-      return " [활동:중국어놀이] 짧은 중국어 단어/구. 고치면 고친 뜻으로.";
+      return " [stay english] Do not speak Chinese. Keep English class.";
     case ACT_ROLE:
-      return " [활동:역할] 아이 역할에 맞춰 상대 역할만. 한 장면.";
+      return " [pretend] Play the other role. One beat. English.";
     case ACT_SLEEP:
-      return " [활동:잠] 아주 짧게 차분히. 새 놀이 제안 금지.";
+      return " [sleep] Very short and calm. No new games.";
     case ACT_SAFE:
-      return " [활동:안전] 짧게 거절하고 놀이로.";
+      return " [safe] Short no, then a new English game.";
   }
   return "";
 }
 
 inline const char* CONV_ENVELOPE_RULES =
-    "매 응답은 반드시 메타로 시작해: "
+    "Every reply MUST start with meta: "
     "{{a=ACT;t=TOPIC;e=EXPECT;p=PHASE;h=0-3;d=DACT;x=ANS;f=FACT}}"
-    "바로 뒤에 아이가 들을 말만 써. 메타·JSON·필드 이름을 말로 읽지 마. "
+    "Then only simple spoken English. Never speak Korean. Never read the meta aloud. "
     "ACT: free|day|meal|hygiene|story|song|count|hangul|en|zh|role|sleep|emo "
     "EXPECT: none|yn|word|num|cont|open|choice "
     "PHASE: idle|offer|play|ask|hint|done "
     "DACT: ans|ack|cont|hint|clar|choice|corr|chg|wait|ask "
-    "TOPIC/ANS/FACT는 짧게(한글·영문 단어). 없으면 비워(t=;x=;f=). "
-    "활동을 바꿀 때만 ACT를 바꾸고, 주제만 바뀌면 t만 바꿔. "
-    "아이가 거부(intent=reject)면 다른 걸 강요하지 마. "
-    "intent=help 이면 정답을 바로 말하지 말고 짧은 힌트(d=hint,h 증가). "
-    "intent=ambig 이고 clarify가 2 이상이면 '응?' 대신 짧은 선택 둘. "
-    "choice로 영어 단어 네 개를 나열하지 마. "
-    "항상 짧은 문장 딱 하나. 두 문장 이상 금지. 질문은 턴당 최대 하나. "
-    "매 턴 질문으로 끝내지 마. 아이 말을 메아리치지 마. "
-    "잘했어를 남발하지 말고 구체적 반응. 질문에는 먼저 답해. "
-    "못 들은 경험·눈에 보이는 걸 꾸며내지 마. "
-    "알아듣기 힘든 음절·오인식처럼 보이는 말은 뜻을 지어내지 마. 한 번만 짧게 되물어. "
-    "사전처럼 설명하지 마. e=word 는 영어·중국어·세기·한글 놀이 퀴즈일 때만. "
-    "메타({{…}})·필드 이름(a,e,ambig)을 절대 입으로 말하지 마.";
+    "TOPIC/ANS/FACT: short English words. Empty if none (t=;x=;f=). "
+    "Change ACT only when the game changes. Topic-only shifts change t. "
+    "If intent=reject, do not push a new game. "
+    "If intent=help, hint only (d=hint, raise h). Do not dump the answer. "
+    "If intent=ambig and clarify is 2+, give two short choices, not Huh. "
+    "Do not list four English words as choices. "
+    "Always one short sentence. At most one question per turn. "
+    "Do not end every turn with a question. Do not echo the child. "
+    "Do not spam Good job. Answer questions first. "
+    "Do not invent unseen experiences. "
+    "Do not invent meaning for garbled speech. Ask once, briefly. "
+    "Do not act like a dictionary. Use e=word only for quiz turns. "
+    "Never speak the meta or field names.";
 
 inline bool chat_mode_canned_reply(ChatMode m, const String& /*user_text*/, String& out) {
   if (m != ACT_SAFE) return false;
-  out = "그건 디노랑 안 놀아. 같이 다른 거 하자.";
+  out = "Let's play something else.";
   return true;
 }
 
@@ -845,6 +910,7 @@ inline bool conv_apply_envelope(ConvState& st, const String& full, String& speak
   String vf = conv_field(body, "f");
 
   if (va.length()) ok_a = conv_parse_activity(va, a);
+  if (a == ACT_ZH || a == ACT_HANGUL) a = ACT_EN;
   if (ve.length()) conv_parse_expect(ve, e);
   if (vp.length()) ok_p = conv_parse_phase(vp, ph);
   if (vd.length()) ok_d = conv_parse_dact(vd, d);

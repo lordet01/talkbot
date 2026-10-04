@@ -1,0 +1,9 @@
+{
+  "name": "en_hear_not_quiz",
+  "description": "Greet and Can you hear must not start an animal quiz",
+  "child_lines": [
+    "Hi",
+    "Can you hear me?",
+    "Hey"
+  ]
+}

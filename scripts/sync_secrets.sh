@@ -31,6 +31,12 @@ KEY_ESC=$(escape "$KEY")
 
 GOOGLE_KEY="${GOOGLE_API:-}"
 GOOGLE_KEY_ESC=$(escape "$GOOGLE_KEY")
+GEMINI_KEY="${GOOGLE_API_GEMINI:-}"
+if [[ -z "$GEMINI_KEY" ]]; then
+  echo "ERROR: Set GOOGLE_API_GEMINI in .env (Gemini LLM key, separate from TTS)"
+  exit 1
+fi
+GEMINI_KEY_ESC=$(escape "$GEMINI_KEY")
 
 # Control panel base URL (Cloudflare Workers). Floor QR = CONTROL_PANEL_URL/?d=&t=
 PANEL_URL="${CONTROL_PANEL_URL:-https://talkbot-control-panel.nine-raptorex.workers.dev}"
@@ -45,6 +51,7 @@ cat > "$OUT" <<EOF
 #define WIFI_PASSWORD "$PASS_ESC"
 #define GROQ_API_KEY "$KEY_ESC"
 #define GOOGLE_API_KEY "$GOOGLE_KEY_ESC"
+#define GOOGLE_API_GEMINI_KEY "$GEMINI_KEY_ESC"
 #define CONTROL_PANEL_URL "$PANEL_ESC"
 EOF
 

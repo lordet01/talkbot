@@ -138,7 +138,7 @@ void device_config_begin(const char* default_voice, const char* default_boot_phr
   if (default_boot_phrase && default_boot_phrase[0]) {
     strncpy(cfg.boot_phrase, default_boot_phrase, sizeof(cfg.boot_phrase) - 1);
   } else {
-    strncpy(cfg.boot_phrase, "안녕, 난 디노야! 같이 놀자.", sizeof(cfg.boot_phrase) - 1);
+    strncpy(cfg.boot_phrase, "Hi, I'm Dino! Let's play English!", sizeof(cfg.boot_phrase) - 1);
   }
   if (default_groq_key) {
     strncpy(cfg.groq_api_key, default_groq_key, sizeof(cfg.groq_api_key) - 1);

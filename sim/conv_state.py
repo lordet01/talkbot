@@ -139,11 +139,11 @@ def _mostly(t: str, needles: tuple[str, ...]) -> bool:
 
 @dataclass
 class ConvState:
-    activity: Activity = Activity.FREE
+    activity: Activity = Activity.EN
     topic: str = ""
     last_act: DAct = DAct.ACK
-    expect: Expect = Expect.NONE
-    phase: Phase = Phase.IDLE
+    expect: Expect = Expect.OPEN
+    phase: Phase = Phase.PLAY
     fact: str = ""
     learn_item: str = ""
     expect_ans: str = ""
@@ -297,7 +297,7 @@ def pre_update(st: ConvState, user_text: str) -> Intent:
     if want != Activity.FREE:
         if locked(st.activity) and want != st.activity:
             strong = any(x in t for x in ("하자", "할래", "해줘", "놀이", "게임", "공부"))
-            ellipsis = t.endswith(("?", "？", "는", "은")) or "그러면" in t or "그럼" in t
+            ellipsis = t.endswith(("는", "은", "는?", "은?")) or "그러면" in t or "그럼" in t
             if st.activity in (Activity.EN, Activity.ZH, Activity.COUNT) and ellipsis:
                 topic = extract_topic(t)
                 if topic:
@@ -320,7 +320,9 @@ def pre_update(st: ConvState, user_text: str) -> Intent:
             return st.last_intent
 
     if locked(st.activity) and st.activity in (Activity.EN, Activity.ZH, Activity.COUNT):
-        if "그러면" in t or "그럼" in t or t.endswith(("?", "는?", "은?")):
+        ko_ellipsis = "그러면" in t or "그럼" in t or t.endswith(("는?", "은?"))
+        en_say = "how do you say" in t.lower()
+        if ko_ellipsis or en_say:
             topic = extract_topic(t)
             if topic:
                 st.topic = topic
@@ -335,10 +337,45 @@ def pre_update(st: ConvState, user_text: str) -> Intent:
 
     if len(t) <= 2 and not _has(t, YES):
         st.last_intent = Intent.AMBIG
+        en_follow_child(st, t)
         return st.last_intent
 
     st.last_intent = Intent.OTHER
+    en_follow_child(st, t)
     return st.last_intent
+
+
+def en_is_chatty(t: str) -> bool:
+    s = t.lower().strip()
+    if s.startswith(("hi", "hey", "hello", "yo")):
+        return True
+    return any(x in s for x in ("hear", "listen", "can you", "are you", "thank"))
+
+
+def en_is_quiz_ask(t: str) -> bool:
+    s = t.lower()
+    return any(x in s for x in ("quiz", "test me", "teach me", "how do you say", "문제", "영어 단어"))
+
+
+def en_follow_child(st: ConvState, user: str) -> None:
+    if st.activity in (Activity.ZH, Activity.HANGUL):
+        st.activity = Activity.EN
+    if st.activity != Activity.EN:
+        return
+    chatty = en_is_chatty(user)
+    quiz = en_is_quiz_ask(user)
+    words = len(user.split())
+    one_word = st.expect == Expect.WORD and words <= 2 and not chatty and not quiz
+    if chatty or (words >= 3 and not quiz and not one_word):
+        st.expect = Expect.OPEN
+        st.phase = Phase.PLAY
+        if chatty or (st.topic and st.topic.lower() not in user.lower()):
+            st.topic = ""
+            st.expect_ans = ""
+        if chatty:
+            st.last_intent = Intent.QUESTION
+    if " " in st.topic:
+        st.topic = ""
 
 
 def _field(body: str, key: str) -> str:
@@ -396,6 +433,8 @@ def apply_envelope(st: ConvState, full: str) -> tuple[bool, str]:
     )
     try:
         a = Activity(va) if va else st.activity
+        if a in (Activity.ZH, Activity.HANGUL):
+            a = Activity.EN
     except ValueError:
         return False, spoken
     if ve in ("-", "ambig", "clarify"):
@@ -451,7 +490,7 @@ def apply_envelope(st: ConvState, full: str) -> tuple[bool, str]:
 
 def state_prompt_line(st: ConvState) -> str:
     return (
-        f" [상태 activity={st.activity.value} topic={st.topic or '-'} "
+        f" [state activity={st.activity.value} topic={st.topic or '-'} "
         f"expect={st.expect.value} phase={st.phase.value} hint={st.hint_level} "
         f"intent={st.last_intent.value} item={st.learn_item or ''} "
         f"ans={st.expect_ans or ''} fact={st.fact or ''} clarify={st.clarify_fails}] "
@@ -459,38 +498,36 @@ def state_prompt_line(st: ConvState) -> str:
 
 
 OVERLAY = {
-    Activity.FREE: " [활동:자유] 짧게 받아쳐. 직전 말에 이어가. 같은 제안 반복 금지.",
-    Activity.DAY: " [활동:인사] 오늘 한 장면만.",
-    Activity.MEAL: " [활동:식사놀이] 같이 먹는 상상. 잔소리 금지.",
-    Activity.HYGIENE: " [활동:손씻기] 한 동작만.",
-    Activity.EMO: " [활동:감정] 먼저 공감. 설교 금지.",
-    Activity.STORY: " [활동:이야기] 한 장면만 말하고 멈춰. '그다음' 전에 이어가지 마.",
-    Activity.SONG: " [활동:노래] 한 소절만.",
-    Activity.COUNT: " [활동:세기] 같이 세기. 틀리면 힌트.",
-    Activity.HANGUL: " [활동:한글] 짧은 따라 말하기.",
+    Activity.FREE: " [play] Short English. Follow the child. No menus.",
+    Activity.DAY: " [hello] One moment of today. Simple English.",
+    Activity.MEAL: " [meal play] Pretend food. No nagging. One short line.",
+    Activity.HYGIENE: " [wash] One action. Example: Bubbles pop!",
+    Activity.EMO: " [feelings] Kind English. One question max if needed.",
+    Activity.STORY: " [story] One beat, then stop. Wait for next.",
+    Activity.SONG: " [song] One short line of a song.",
+    Activity.COUNT: " [count] Count together in English. Hint if stuck.",
+    Activity.HANGUL: " [letters] Keep English. Spell a short word if they want letters.",
     Activity.EN: (
-        " [활동:영어놀이] 한 턴에 영어 단어 하나. "
-        "한글 단어→영어 한 마디, 영어→한글 뜻 한 마디. "
-        "'문제 내'면 한글 단어 하나만 물어. 보기 나열 금지. "
-        "Apple Train Boat Dog를 한꺼번에 말하지 마. "
-        "'아니 네가 해'는 출제 요청이지 단어 교정이 아님."
+        " [english chat] Follow the child. Greet. Answer Can you hear. "
+        "Do not quiz unless they asked. Never invent a seen animal. "
+        "Korean word in -> English word out. One short sentence."
     ),
-    Activity.ZH: " [활동:중국어놀이] 짧은 중국어 단어.",
-    Activity.ROLE: " [활동:역할] 상대 역할만. 한 장면.",
-    Activity.SLEEP: " [활동:잠] 짧게 차분히.",
-    Activity.SAFE: " [활동:안전] 짧게 거절.",
+    Activity.ZH: " [stay english] Do not speak Chinese. Keep English class.",
+    Activity.ROLE: " [pretend] Play the other role. One beat. English.",
+    Activity.SLEEP: " [sleep] Very short and calm. No new games.",
+    Activity.SAFE: " [safe] Short no, then a new English game.",
 }
 
 ENVELOPE_RULES = (
-    "매 응답은 반드시 메타로 시작해: "
+    "Every reply MUST start with meta: "
     "{{a=ACT;t=TOPIC;e=EXPECT;p=PHASE;h=0-3;d=DACT;x=ANS;f=FACT}}"
-    "바로 뒤에 아이가 들을 말만 써. 메타를 말로 읽지 마. "
+    "Then only simple spoken English. Never speak Korean. Never read the meta aloud. "
     "ACT: free|day|meal|hygiene|story|song|count|hangul|en|zh|role|sleep|emo "
     "EXPECT: none|yn|word|num|cont|open|choice PHASE: idle|offer|play|ask|hint|done "
     "DACT: ans|ack|cont|hint|clar|choice|corr|chg|wait|ask "
-    "못 들은 경험·눈에 보이는 걸 꾸며내지 마. "
-    "알아듣기 힘든 음절은 뜻을 지어내지 마. 사전처럼 설명하지 마. "
-    "choice로 영어 단어 네 개를 나열하지 마. "
-    "e=word 는 영어·중국어·세기·한글 놀이 퀴즈일 때만. "
-    "메타를 말로 읽지 마."
+    "Do not invent unseen experiences. "
+    "Do not invent meaning for garbled speech. Do not act like a dictionary. "
+    "Do not list four English words as choices. "
+    "e=word only for quiz turns. "
+    "Never speak the meta."
 )

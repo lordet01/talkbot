@@ -60,7 +60,7 @@ python3 sim/run_sim.py --free --turns 16 --seed "영어 공부하자"
 python3 sim/critique.py sim/runs/<latest>.json
 ```
 
-Needs `GOOGLE_API` in repo `.env` (same Gemini key as firmware LLM). Child-side sim still uses `GROQ_API` if the runner generates kid lines.
+Needs `GOOGLE_API_GEMINI` in repo `.env` (Gemini LLM). TTS still uses `GOOGLE_API`. Child-side sim still uses `GROQ_API` if the runner generates kid lines.
 
 ### Keep mirror in sync
 

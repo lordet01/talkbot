@@ -89,8 +89,15 @@ def test_no_sticky_expiry() -> None:
     check(st.activity == Activity.EN, "EN must not expire by turn count")
 
 
+def test_hear_not_vocab_quiz() -> None:
+    st = ConvState(activity=Activity.EN, expect=Expect.WORD, topic="dog")
+    pre_update(st, "Can you hear me?")
+    check(st.expect == Expect.OPEN, f"expect={st.expect}")
+    check(st.topic == "", f"topic={st.topic!r}")
+
+
 def test_morning_not_meal() -> None:
-    st = ConvState()
+    st = ConvState(activity=Activity.FREE)
     pre_update(st, "좋은 아침이야")
     check(st.activity == Activity.DAY, f"got {st.activity}")
 
@@ -161,6 +168,7 @@ def main() -> None:
         test_story_continue,
         test_explicit_switch,
         test_no_sticky_expiry,
+        test_hear_not_vocab_quiz,
         test_morning_not_meal,
         test_envelope_apply,
         test_envelope_invalid_no_corrupt,
