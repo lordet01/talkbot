@@ -8,3 +8,10 @@ arduino/05_groq_voice_chat/secrets.h
 
 # Large firmware binaries (download via scripts/flash_respeaker_i2s.sh)
 firmware/*.bin
+
+# Swift/Xcode local build and signing state
+ios/TalkbotCore/.build/
+ios/TalkbotCore/.swiftpm/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/

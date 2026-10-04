@@ -1,0 +1,29 @@
+name: Swift companion
+on:
+  push:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  swift-and-ios:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test conversation, gaze and latency core
+        run: swift test --package-path ios/TalkbotCore
+      - name: Verify generated Xcode project stays in sync
+        run: |
+          python3 ios/scripts/generate_project.py
+          git diff --exit-code -- ios/Talkbot.xcodeproj ios/Talkbot/Info.plist
+      - name: Build iOS simulator app
+        run: |
+          xcodebuild -project ios/Talkbot.xcodeproj -scheme Talkbot \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/talkbot-build CODE_SIGNING_ALLOWED=NO build
