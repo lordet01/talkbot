@@ -9,63 +9,71 @@ public enum TurnTaking: String, Codable, CaseIterable, Sendable {
     public var silenceMilliseconds: Int { self == .responsive ? 350 : 650 }
 }
 
-public enum Activity: String, Sendable {
-    case free, english, story, counting, rolePlay
+public enum Activity: String, Sendable, Equatable {
+    case free, day, meal, hygiene, emo, story, song, counting, hangul, english, rolePlay, sleep, safe
 }
 
 public enum Expression: String, Sendable {
     case warm, curious, delighted, thoughtful, comforting, sleepy
 }
 
-/// UI state only. Realtime's conversation is authoritative; there is no second
-/// classifier request and no late transcript overwriting the model's instructions.
+/// UI + pre-LLM conversation frame. Activity is a play room; topic is the object inside it.
 public struct ConversationState: Sendable {
     public private(set) var activity: Activity = .free
     public private(set) var topic = ""
     public private(set) var hintLevel = 0
     public private(set) var expression: Expression = .warm
+    public private(set) var expect: Expect = .none
+    public private(set) var phase: Phase = .idle
+    public private(set) var lastIntent: UtterIntent = .other
+    public private(set) var lastBeat: Beat = .follow
+    var recentQuestions = 0
+    var clarifyFails = 0
 
     public init() {}
 
-    public mutating func hear(_ raw: String) {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        if contains(text, ["그만", "다른 놀이", "안 할래", "안할래", "싫어", "하지 마"]) {
-            activity = .free; topic = ""; hintLevel = 0; expression = .warm
-            return
-        }
-        // Feelings do not steal an ongoing learning/story activity.
-        if contains(text, ["슬퍼", "무서워", "속상", "아파", "외로워"]) {
-            expression = .comforting
-            return
-        }
-        if contains(text, ["졸려", "잘 자", "잘자"]) { expression = .sleepy; return }
-        expression = .curious
-        let next: Activity?
-        if contains(text.lowercased(), ["영어", "english"]) { next = .english }
-        else if contains(text, ["이야기 해줘", "이야기 들려", "동화"]) { next = .story }
-        else if contains(text, ["숫자", "같이 세", "세어줘", "더하기"]) { next = .counting }
-        else if contains(text, ["역할놀이", "병원놀이", "병원 놀이", "가게 놀이"]) { next = .rolePlay }
-        else { next = nil }
-        if let next, next != activity { activity = next; hintLevel = 0; topic = "" }
-        if contains(text, ["몰라", "모르겠", "힌트", "어려워", "도와줘"]) {
-            hintLevel = min(3, hintLevel + 1)
-            return
-        }
-        if text != "응" && text != "네" && !contains(text, ["그다음", "그 다음", "계속"]) {
-            topic = String(text.prefix(60))
-        }
+    @discardableResult
+    public mutating func hear(_ raw: String, age: ChildAge = .earlySchool) -> TurnPlan {
+        var snap = snapshot()
+        snap.expression = .curious
+        let plan = TurnRouter.decide(state: &snap, raw: raw, age: age)
+        apply(snap)
+        expression = plan.expression
+        return plan
     }
 
     public mutating func reply(_ text: String) {
-        if contains(text, ["속상", "괜찮아", "무서웠", "어른", "보호자"]) { expression = .comforting }
-        else if contains(text, ["잘 자", "포근", "꿈"]) { expression = .sleepy }
-        else if contains(text, ["맞아", "찾았", "멋진", "재밌", "신나"]) { expression = .delighted }
-        else { expression = .warm }
+        var snap = snapshot()
+        TurnRouter.afterReply(&snap, spoken: text)
+        apply(snap)
     }
 
-    private func contains(_ text: String, _ words: [String]) -> Bool {
-        words.contains(where: { text.contains($0) })
+    func snapshot() -> TurnRouter.Snapshot {
+        TurnRouter.Snapshot(
+            activity: activity,
+            topic: topic,
+            hintLevel: hintLevel,
+            expression: expression,
+            expect: expect,
+            phase: phase,
+            intent: lastIntent,
+            beat: lastBeat,
+            recentQuestions: recentQuestions,
+            clarifyFails: clarifyFails
+        )
+    }
+
+    private mutating func apply(_ snap: TurnRouter.Snapshot) {
+        activity = snap.activity
+        topic = snap.topic
+        hintLevel = snap.hintLevel
+        expression = snap.expression
+        expect = snap.expect
+        phase = snap.phase
+        lastIntent = snap.intent
+        lastBeat = snap.beat
+        recentQuestions = snap.recentQuestions
+        clarifyFails = snap.clarifyFails
     }
 }
 

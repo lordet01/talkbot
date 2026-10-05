@@ -9,6 +9,9 @@ Seeed Studio **ReSpeaker Lite** + **XIAO ESP32S3 통합보드** 기반 임베디
 | [device-connection-status.md](./device-connection-status.md) | USB/DFU/시리얼 연결 상태 |
 | [voice-recognition-prototype-setup.md](./voice-recognition-prototype-setup.md) | 환경 구축 및 실행 가이드 |
 | [conversation-scenarios.md](./conversation-scenarios.md) | 교육용 인형 대화 카테고리·시나리오 설계 |
+| [llm-preprocess.md](./llm-preprocess.md) | STT 이후 결정 테이블·3B 프롬프트 패킹 |
+| [ios-local-ondevice.md](./ios-local-ondevice.md) | iPhone 15 Pro 로컬 STT·3B·TTS 앱 (2026-10-04 계획) |
+| [ios-companion-validation.md](./ios-companion-validation.md) | Swift Realtime 클라우드 앱 실기기 검증 |
 
 ## 빠른 실행 (경로 B: ESP32/I2S)
 

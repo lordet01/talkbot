@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "type": "scripted",
+    "scenario": "sim/scenarios/en_hear_not_quiz.json",
+    "name": "en_hear_not_quiz"
+  },
+  "turns": [
+    {
+      "user": "Hi",
+      "assistant": "Hi there!",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 1755,
+      "activity": "en",
+      "topic": "",
+      "expect": "open",
+      "intent": "question"
+    },
+    {
+      "user": "Can you hear me?",
+      "assistant": "Yes, I can hear you clearly.",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 915,
+      "activity": "en",
+      "topic": "",
+      "expect": "open",
+      "intent": "question"
+    },
+    {
+      "user": "Hey",
+      "assistant": "Hey there!",
+      "mode": "J-en",
+      "sticky": 0,
+      "entered": false,
+      "latency_ms": 1309,
+      "activity": "en",
+      "topic": "",
+      "expect": "open",
+      "intent": "question"
+    }
+  ]
+}

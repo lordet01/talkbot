@@ -1,6 +1,30 @@
 import Foundation
 import Security
 
+enum ConnectionStore {
+    private static let overrideKey = "connectionSecretOverride"
+    static func loadOverride() -> String {
+        UserDefaults.standard.string(forKey: overrideKey) ?? ""
+    }
+    static func saveOverride(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: overrideKey)
+            try? KeychainStore.write("", account: "connection-secret")
+            return
+        }
+        UserDefaults.standard.set(trimmed, forKey: overrideKey)
+        try? KeychainStore.write(trimmed, account: "connection-secret")
+    }
+    static func resolvedKey(override: String) -> String {
+        let typed = override.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty { return typed }
+        let saved = loadOverride().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !saved.isEmpty { return saved }
+        return BundledSecrets.openAIAPIKey
+    }
+}
+
 enum KeychainStore {
     private static let service = "org.talkbot.ios"
     static func read(_ account: String) -> String {
@@ -13,13 +37,14 @@ enum KeychainStore {
         return String(decoding: data, as: UTF8.self)
     }
     static func write(_ value: String, account: String) throws {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service, kSecAttrAccount as String: account]
         SecItemDelete(query as CFDictionary)
-        guard !value.isEmpty else { return }
+        guard !trimmed.isEmpty else { return }
         var attributes = query
-        attributes[kSecValueData as String] = Data(value.utf8)
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        attributes[kSecValueData as String] = Data(trimmed.utf8)
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         guard SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess else { throw CredentialError.storage }
     }
 }
@@ -28,8 +53,8 @@ enum CredentialError: LocalizedError {
     case missing, storage, insecureURL, rejected(Int), invalidResponse
     var errorDescription: String? {
         switch self {
-        case .missing: return "보호자 설정에서 연결 정보를 입력해 주세요."
-        case .storage: return "연결 정보를 안전하게 저장하지 못했어요."
+        case .missing: return "설정에서 OpenAI API 키를 입력해 주세요."
+        case .storage: return "연결 정보를 저장하지 못했어요."
         case .insecureURL: return "토큰 서버는 HTTPS 주소여야 해요."
         case .rejected(let status): return "음성 연결 인증에 실패했어요 (HTTP \(status))."
         case .invalidResponse: return "음성 연결 토큰을 받지 못했어요."

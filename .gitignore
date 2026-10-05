@@ -13,5 +13,17 @@ firmware/*.bin
 ios/TalkbotCore/.build/
 ios/TalkbotCore/.swiftpm/
 ios/DerivedData/
+ios/Talkbot/Generated/BundledSecrets.swift
+
+# On-device model weights (fetch via scripts/ios_models/)
+ios/Models/**
+!ios/Models/.gitkeep
+!ios/Models/**/MANIFEST.json
+ios/Vendor/*.zip
+ios/Vendor/*.xcframework/
+ios/Vendor/build-apple/
+
+# Source sprite sheet (sliced copies live in ios/Talkbot/Assets.xcassets)
+assets/*.png
 *.xcuserstate
 xcuserdata/

@@ -63,9 +63,11 @@ talkbot = **듣고 답하고 말하는 파이프라인**
 
 ## Swift 스마트폰 앱
 
-[`ios/`](ios/)에 iPhone/iPad용 **디노 앱**을 추가했습니다. 가로 스탠드에서 실시간 음성 대화, 끼어들기, 연령별 어린이 대화 지침, 카메라 기반 눈맞춤과 표정을 제공합니다. 기존 ESP32 없이 휴대폰 자체로 동작합니다.
+[`ios/`](ios/)에 iPhone/iPad용 **디노 앱**을 추가했습니다. 세로로 들고 실시간 음성 대화, 끼어들기, 연령별 어린이 대화 지침, 카메라 기반 눈맞춤과 표정을 제공합니다. 기존 ESP32 없이 휴대폰 자체로 동작합니다.
 
 `ios/Talkbot.xcodeproj`를 Xcode에서 열어 실행합니다. 보호자 설정에서 음성 API 연결 정보를 입력합니다. **1초 응답은 목표이며 네트워크·API에 따른 모든 턴 보장은 아닙니다.** 앱에서 실제 렌더 기준 지연 추정치와 초과 횟수를 확인할 수 있습니다. 설치·구조·검증은 [`ios/README.md`](ios/README.md)를 참고하세요.
+
+ESP32를 접고 폰에서 STT·온디바이스 3B·TTS를 돌리기로 한 계획(시뮬레이터 Debug → iPhone 15 Pro)은 [`docs/ios-local-ondevice.md`](docs/ios-local-ondevice.md)에 있다. 현재 `ios/` 커밋은 그 구현이 아니라 OpenAI Realtime 경로이다.
 
 ## 설계 원칙
 

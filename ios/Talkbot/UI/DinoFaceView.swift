@@ -1,102 +1,134 @@
 import SwiftUI
 import TalkbotCore
 
+private enum DinoEyeLayout {
+    static let left = CGPoint(x: 129.4 / 400, y: 195.9 / 440)
+    static let right = CGPoint(x: 263.0 / 400, y: 196.2 / 440)
+    static let open = CGSize(width: 34.0 / 400, height: 48.0 / 440)
+    static let shut = CGSize(width: 40.0 / 400, height: 22.0 / 440)
+    static let lookX: CGFloat = 0.024
+    static let lookY: CGFloat = 0.007
+    static let restY: CGFloat = 0.0035
+    static let irisScale: CGFloat = 1.08
+}
+
+enum DinoBodyPose: String {
+    case idle = "DinoIdleBlank"
+    case talk = "DinoTalkBlank"
+    case back = "DinoBack"
+
+    static let canvasAspect: CGFloat = 400.0 / 440.0
+
+    static func choose(
+        expression: TalkbotCore.Expression,
+        speaking: Bool,
+        thinking: Bool,
+        eyeContact: Bool,
+        time: TimeInterval
+    ) -> DinoBodyPose {
+        if thinking { return .idle }
+        if expression == .sleepy, !speaking { return .back }
+        if !speaking, !eyeContact {
+            let away = time.truncatingRemainder(dividingBy: 13)
+            if away > 10.4 { return .back }
+        }
+        if speaking {
+            return sin(time * 16) > 0.05 ? .talk : .idle
+        }
+        return .idle
+    }
+}
+
 struct DinoFaceView: View {
     let gaze: GazePoint
     let eyeContact: Bool
+    let eyesOpen: Bool
     let expression: TalkbotCore.Expression
     let speaking: Bool
     let listening: Bool
+    let thinking: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
-            let width = min(geometry.size.width * 0.8, geometry.size.height * 1.85)
+            let aspect = DinoBodyPose.canvasAspect
+            let width = min(geometry.size.width, geometry.size.height * aspect)
+            let height = width / aspect
             TimelineView(.animation(minimumInterval: reduceMotion ? 0.5 : 1.0 / 30)) { context in
                 let time = context.date.timeIntervalSinceReferenceDate
-                let blink = !reduceMotion && time.truncatingRemainder(dividingBy: 4.7) < 0.14
-                let sleepy = expression == .sleepy
-                let bob = reduceMotion ? 0 : sin(time * 1.8) * 3
-                let mouth = speaking ? 12 + (sin(time * 15) + 1) * 9 : 5
+                let idleBlink = !reduceMotion && time.truncatingRemainder(dividingBy: 4.7) < 0.14
+                let closed = !eyesOpen || idleBlink
+                let pose = DinoBodyPose.choose(
+                    expression: expression, speaking: speaking, thinking: thinking,
+                    eyeContact: eyeContact, time: reduceMotion ? (speaking ? 0.1 : 0) : time)
+                let bob = reduceMotion ? 0 : sin(time * (speaking ? 3.4 : 1.6)) * (speaking ? 5 : 3)
+                let breath = reduceMotion ? 1 : 1 + sin(time * 1.15) * 0.012
+                let look = eyeLook(width: width, height: height)
                 ZStack {
-                    // Rounded silhouette is intentionally drawn in Swift, so
-                    // expression and gaze remain live at every screen size.
-                    HStack(spacing: width * 0.16) {
-                        RoundedRectangle(cornerRadius: 18).fill(Color(red: 0.26, green: 0.65, blue: 0.45))
-                            .frame(width: width * 0.12, height: width * 0.25).rotationEffect(.degrees(-25))
-                        RoundedRectangle(cornerRadius: 18).fill(Color(red: 0.26, green: 0.65, blue: 0.45))
-                            .frame(width: width * 0.12, height: width * 0.25).rotationEffect(.degrees(25))
-                    }.offset(y: -width * 0.24)
-                    RoundedRectangle(cornerRadius: width * 0.22, style: .continuous)
-                        .fill(LinearGradient(colors: [Color(red: 0.56, green: 0.88, blue: 0.64),
-                            Color(red: 0.32, green: 0.73, blue: 0.49)], startPoint: .top, endPoint: .bottom))
-                        .frame(width: width, height: width * 0.60)
-                        .shadow(color: .black.opacity(0.08), radius: 24, y: 12)
-                    HStack(spacing: width * 0.14) {
-                        eye(width: width * 0.20, blink: blink || sleepy)
-                        eye(width: width * 0.20, blink: blink || sleepy)
-                    }.offset(y: -width * 0.05)
-                    HStack(spacing: width * 0.60) {
-                        Ellipse().fill(Color.pink.opacity(expression == .delighted ? 0.35 : 0.18))
-                        Ellipse().fill(Color.pink.opacity(expression == .delighted ? 0.35 : 0.18))
-                    }.frame(width: width * 0.82, height: width * 0.065).offset(y: width * 0.13)
-                    HStack(spacing: width * 0.06) {
-                        Capsule().fill(Color(red: 0.19, green: 0.46, blue: 0.32))
-                        Capsule().fill(Color(red: 0.19, green: 0.46, blue: 0.32))
-                    }.frame(width: width * 0.12, height: width * 0.018).offset(y: width * 0.095)
-                    if speaking {
-                        Ellipse().fill(Color(red: 0.12, green: 0.28, blue: 0.23))
-                            .overlay(alignment: .bottom) { Ellipse().fill(Color.pink.opacity(0.7)).frame(height: mouth * 0.45) }
-                            .frame(width: width * 0.14, height: mouth).offset(y: width * 0.20)
-                    } else {
-                        SmileShape().stroke(Color(red: 0.12, green: 0.28, blue: 0.23),
-                            style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                            .frame(width: width * (expression == .delighted ? 0.25 : 0.16), height: 14)
-                            .offset(y: width * 0.19)
+                    Ellipse()
+                        .fill(Color.black.opacity(0.10))
+                        .frame(width: width * 0.62, height: width * 0.10)
+                        .offset(y: width * 0.46)
+                    Image(pose.rawValue)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .scaleEffect(breath * (eyeContact ? 1.02 : 1))
+                    if pose != .back {
+                        eye(open: !closed, at: DinoEyeLayout.left, width: width, height: height, look: look, flip: false)
+                        eye(open: !closed, at: DinoEyeLayout.right, width: width, height: height, look: look, flip: true)
                     }
                     if listening {
-                        Circle().stroke(Color.white.opacity(0.75), lineWidth: 3)
-                            .frame(width: 14, height: 14).offset(x: width * 0.47, y: -width * 0.20)
+                        Circle()
+                            .fill(Color.white.opacity(0.92))
+                            .frame(width: 12, height: 12)
+                            .overlay(Circle().stroke(Color(red: 0.20, green: 0.48, blue: 0.33), lineWidth: 2))
+                            .offset(x: width * 0.38, y: -width * 0.36)
                     }
                 }
-                .offset(x: reduceMotion ? 0 : gaze.x * 5, y: bob)
+                .offset(y: bob)
+                .frame(width: width, height: height)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("디노")
-        .accessibilityValue(speaking ? "말하는 중" : listening ? "듣는 중" : "기다리는 중")
+        .accessibilityValue(speaking ? "말하는 중" : listening ? "듣는 중" : thinking ? "생각 중" : "기다리는 중")
     }
 
-    private func eye(width: CGFloat, blink: Bool) -> some View {
-        ZStack {
-            Capsule().fill(Color.white).frame(width: width, height: blink ? 9 : width * 1.08)
-            if !blink {
-                Ellipse().fill(Color(red: 0.10, green: 0.20, blue: 0.18))
-                    .frame(width: width * 0.48, height: width * (expression == .curious ? 0.65 : 0.58))
-                    .overlay(alignment: .topLeading) {
-                        Circle().fill(Color.white).frame(width: width * 0.15).padding(width * 0.075)
-                    }
-                    .offset(x: gaze.x * width * 0.20, y: gaze.y * width * 0.15)
-                    .scaleEffect(eyeContact ? 1.06 : 1)
-            }
-            if expression == .comforting || expression == .thoughtful {
-                Capsule().fill(Color(red: 0.12, green: 0.32, blue: 0.22))
-                    .frame(width: width * 0.70, height: 6)
-                    .rotationEffect(.degrees(expression == .comforting ? -8 : 8))
-                    .offset(y: -width * 0.64)
+    private func eyeLook(width: CGFloat, height: CGFloat) -> CGSize {
+        if reduceMotion { return .zero }
+        let x = CGFloat(max(-1, min(1, gaze.x))) * width * DinoEyeLayout.lookX
+        let y = CGFloat(max(-1, min(1, -gaze.y))) * height * DinoEyeLayout.lookY
+            + height * DinoEyeLayout.restY
+        return CGSize(width: x, height: y)
+    }
+
+    private func eye(open: Bool, at unit: CGPoint, width: CGFloat, height: CGFloat, look: CGSize, flip: Bool) -> some View {
+        let socket = CGSize(width: width * DinoEyeLayout.open.width, height: height * DinoEyeLayout.open.height)
+        let origin = CGSize(width: (unit.x - 0.5) * width, height: (unit.y - 0.5) * height)
+        return ZStack {
+            if open {
+                Image("DinoEyeOpen")
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(
+                        width: socket.width * DinoEyeLayout.irisScale,
+                        height: socket.height * DinoEyeLayout.irisScale)
+                    .offset(x: look.width, y: look.height)
+            } else {
+                Ellipse().fill(Color(red: 0.97, green: 0.91, blue: 0.82))
+                Image("DinoEyeShut")
+                    .resizable()
+                    .interpolation(.high)
+                    .scaleEffect(x: flip ? -1 : 1, y: 1)
+                    .frame(
+                        width: width * DinoEyeLayout.shut.width,
+                        height: height * DinoEyeLayout.shut.height)
             }
         }
-        .frame(width: width, height: width * 1.15)
-        .animation(.easeOut(duration: 0.12), value: gaze)
-    }
-}
-
-private struct SmileShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: 0, y: 0))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: 0), control: CGPoint(x: rect.midX, y: rect.maxY * 1.5))
-        return path
+        .frame(width: socket.width, height: socket.height)
+        .clipShape(Ellipse())
+        .offset(x: origin.width, y: origin.height)
     }
 }

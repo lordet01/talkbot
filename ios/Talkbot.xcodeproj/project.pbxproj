@@ -23,6 +23,36 @@
 			"path" = "Talkbot/Audio/AudioDuplex.swift";
 			"sourceTree" = "<group>";
 		};
+		"F1A67BDBB39194AC4982AC12" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Generated/BundledSecrets.swift";
+			"sourceTree" = "<group>";
+		};
+		"E56600ED5353FD57492001B4" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Local/DinoLlama.swift";
+			"sourceTree" = "<group>";
+		};
+		"E3DDB00DFB2040313AE96CB9" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Local/KoreanSpeech.swift";
+			"sourceTree" = "<group>";
+		};
+		"7205E844BB40567122DD2AEC" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Local/KoreanVoice.swift";
+			"sourceTree" = "<group>";
+		};
+		"CA98CDED8C0A26F38CCF75A3" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Local/TalkbotLog.swift";
+			"sourceTree" = "<group>";
+		};
 		"7E09FAB0F283A1478EF599BC" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -59,6 +89,12 @@
 			"path" = "Talkbot/UI/ParentSettingsView.swift";
 			"sourceTree" = "<group>";
 		};
+		"BEADE5394896C411C5B1FCEB" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Talkbot/Vendor/SherpaOnnx.swift";
+			"sourceTree" = "<group>";
+		};
 		"CEEC936B3661E2980A4E08AD" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -83,6 +119,12 @@
 			"path" = "TalkbotCore/Sources/TalkbotCore/TurnLatency.swift";
 			"sourceTree" = "<group>";
 		};
+		"EF34720B88D58FCB737FD019" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TalkbotCore/Sources/TalkbotCore/TurnRouter.swift";
+			"sourceTree" = "<group>";
+		};
 		"B6CDB6E5D160E013280D3C68" = {
 			"isa" = "PBXFileReference";
 			"explicitFileType" = "wrapper.application";
@@ -95,6 +137,24 @@
 			"path" = "TalkbotCore.framework";
 			"sourceTree" = "BUILT_PRODUCTS_DIR";
 		};
+		"FE1DE9AF23A4C5F693BE0C89" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "wrapper.xcframework";
+			"path" = "Vendor/SherpaOnnxC.xcframework";
+			"sourceTree" = "<group>";
+		};
+		"9481EBE27F814852CD22B611" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "wrapper.xcframework";
+			"path" = "Vendor/llama.xcframework";
+			"sourceTree" = "<group>";
+		};
+		"9DD64833FAA27FF832948E15" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "folder.assetcatalog";
+			"path" = "Talkbot/Assets.xcassets";
+			"sourceTree" = "<group>";
+		};
 		"00C45FD35CB0F9C5F764F070" = {
 			"isa" = "PBXGroup";
 			"children" = ("B6CDB6E5D160E013280D3C68", "797E92F9BC7CD81F430FA27D",);
@@ -103,19 +163,25 @@
 		};
 		"CF8D0BD4B75E8C2C174692A5" = {
 			"isa" = "PBXGroup";
-			"children" = ("BD9648DA21D29D0B87418CCE", "CD4A160D444F8F103DC93143", "4AD421550C711218E6B163E8", "7E09FAB0F283A1478EF599BC", "CE944F036C1690A84CE32365", "31D1B1F48816E7B23BA78552", "E2C8EC022C94E632B990F944", "BDEC61AA5446DBB07A40BBBF", "FB5E7A65A9243963E8031938",);
+			"children" = ("BD9648DA21D29D0B87418CCE", "CD4A160D444F8F103DC93143", "4AD421550C711218E6B163E8", "F1A67BDBB39194AC4982AC12", "E56600ED5353FD57492001B4", "E3DDB00DFB2040313AE96CB9", "7205E844BB40567122DD2AEC", "CA98CDED8C0A26F38CCF75A3", "7E09FAB0F283A1478EF599BC", "CE944F036C1690A84CE32365", "31D1B1F48816E7B23BA78552", "E2C8EC022C94E632B990F944", "BDEC61AA5446DBB07A40BBBF", "FB5E7A65A9243963E8031938", "BEADE5394896C411C5B1FCEB", "9DD64833FAA27FF832948E15",);
 			"name" = "Talkbot";
 			"sourceTree" = "<group>";
 		};
 		"FC8F5A85394B0D5FF7E93AFA" = {
 			"isa" = "PBXGroup";
-			"children" = ("CEEC936B3661E2980A4E08AD", "BAB75A4689BCC9138C61F94A", "545A5C3D66C57EED6D1108C5", "016608B9BD7D1E7282C2DD8D",);
+			"children" = ("CEEC936B3661E2980A4E08AD", "BAB75A4689BCC9138C61F94A", "545A5C3D66C57EED6D1108C5", "016608B9BD7D1E7282C2DD8D", "EF34720B88D58FCB737FD019",);
 			"name" = "TalkbotCore";
+			"sourceTree" = "<group>";
+		};
+		"1A911DB0AE1A08181A27D02E" = {
+			"isa" = "PBXGroup";
+			"children" = ("FE1DE9AF23A4C5F693BE0C89", "9481EBE27F814852CD22B611",);
+			"name" = "Vendor";
 			"sourceTree" = "<group>";
 		};
 		"DF891E785808226D241F246E" = {
 			"isa" = "PBXGroup";
-			"children" = ("CF8D0BD4B75E8C2C174692A5", "FC8F5A85394B0D5FF7E93AFA", "00C45FD35CB0F9C5F764F070",);
+			"children" = ("CF8D0BD4B75E8C2C174692A5", "FC8F5A85394B0D5FF7E93AFA", "1A911DB0AE1A08181A27D02E", "00C45FD35CB0F9C5F764F070",);
 			"sourceTree" = "<group>";
 		};
 		"8376A56EC916D8E7125A3ACE" = {
@@ -129,6 +195,26 @@
 		"68D5AD372A197D8EBED38F49" = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = "4AD421550C711218E6B163E8";
+		};
+		"DAFA5D3C334440CB732F4404" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F1A67BDBB39194AC4982AC12";
+		};
+		"D500AB1A3B814496BB41200F" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E56600ED5353FD57492001B4";
+		};
+		"B2B406E42340322864033154" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E3DDB00DFB2040313AE96CB9";
+		};
+		"DB5AA716ECFD575F5547F1E7" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "7205E844BB40567122DD2AEC";
+		};
+		"7A1F33AF5ED5DC2674A625B2" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "CA98CDED8C0A26F38CCF75A3";
 		};
 		"967A68BFD3E3FE1A7F086E96" = {
 			"isa" = "PBXBuildFile";
@@ -154,10 +240,14 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "FB5E7A65A9243963E8031938";
 		};
+		"C2726EC4031E3F1FE8B5A97F" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BEADE5394896C411C5B1FCEB";
+		};
 		"3BE5C704148406E58FE0AB5F" = {
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("8376A56EC916D8E7125A3ACE", "7219E576ACA22C1DAF879EA7", "68D5AD372A197D8EBED38F49", "967A68BFD3E3FE1A7F086E96", "A222A3FF245A7C9468CE62C2", "95700E75B4742C4FD64E9D2B", "86902AFFEEEF188E6F405FFE", "468804123508E812B5D9E1B6", "BF26C9B90681812B7E325C7D",);
+			"files" = ("8376A56EC916D8E7125A3ACE", "7219E576ACA22C1DAF879EA7", "68D5AD372A197D8EBED38F49", "DAFA5D3C334440CB732F4404", "D500AB1A3B814496BB41200F", "B2B406E42340322864033154", "DB5AA716ECFD575F5547F1E7", "7A1F33AF5ED5DC2674A625B2", "967A68BFD3E3FE1A7F086E96", "A222A3FF245A7C9468CE62C2", "95700E75B4742C4FD64E9D2B", "86902AFFEEEF188E6F405FFE", "468804123508E812B5D9E1B6", "BF26C9B90681812B7E325C7D", "C2726EC4031E3F1FE8B5A97F",);
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"DCB6C4AC5D5DBA9E6C460DBE" = {
@@ -176,10 +266,14 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "016608B9BD7D1E7282C2DD8D";
 		};
+		"B44D7519EAA76A61887ACCA0" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "EF34720B88D58FCB737FD019";
+		};
 		"F94C513333E48157451A105F" = {
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("DCB6C4AC5D5DBA9E6C460DBE", "36978FA627AAE186707EB330", "BD093F7CF2CEB5305A7ABFB3", "11A9A27AAECFA65A2D1E7F2B",);
+			"files" = ("DCB6C4AC5D5DBA9E6C460DBE", "36978FA627AAE186707EB330", "BD093F7CF2CEB5305A7ABFB3", "11A9A27AAECFA65A2D1E7F2B", "B44D7519EAA76A61887ACCA0",);
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"73647DE41828CE7836E2AA40" = {
@@ -193,10 +287,32 @@
 				"ATTRIBUTES" = ("CodeSignOnCopy", "RemoveHeadersOnCopy",);
 			};
 		};
+		"233938C863C4579D8950AAA8" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "FE1DE9AF23A4C5F693BE0C89";
+		};
+		"CD4AC69A6CF671B0EFB8F801" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "FE1DE9AF23A4C5F693BE0C89";
+			"settings" = {
+				"ATTRIBUTES" = ("CodeSignOnCopy", "RemoveHeadersOnCopy",);
+			};
+		};
+		"3C14DA478D7933D44378CCEE" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "9481EBE27F814852CD22B611";
+		};
+		"502A0FD0B9E6D3034F25CD44" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "9481EBE27F814852CD22B611";
+			"settings" = {
+				"ATTRIBUTES" = ("CodeSignOnCopy", "RemoveHeadersOnCopy",);
+			};
+		};
 		"5B9773D84493B3D713DB9AC0" = {
 			"isa" = "PBXFrameworksBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("73647DE41828CE7836E2AA40",);
+			"files" = ("73647DE41828CE7836E2AA40", "233938C863C4579D8950AAA8", "3C14DA478D7933D44378CCEE",);
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"1ECCA0A66973F9E1FCE68BCF" = {
@@ -210,15 +326,33 @@
 			"buildActionMask" = 2147483647;
 			"dstPath" = "";
 			"dstSubfolderSpec" = 10;
-			"files" = ("CB416FA54C6F25DA0B8C2B9A",);
+			"files" = ("CB416FA54C6F25DA0B8C2B9A", "CD4AC69A6CF671B0EFB8F801", "502A0FD0B9E6D3034F25CD44",);
 			"name" = "Embed Frameworks";
 			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"E45F053E1E196A35CE09D5A3" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "9DD64833FAA27FF832948E15";
 		};
 		"C02F1309AF4906C92F1EAD44" = {
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ();
+			"files" = ("E45F053E1E196A35CE09D5A3",);
 			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"6F910460749225298A52C366" = {
+			"isa" = "PBXShellScriptBuildPhase";
+			"alwaysOutOfDate" = 1;
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"inputFileListPaths" = ();
+			"inputPaths" = ("$(SRCROOT)/../.env", "$(SRCROOT)/scripts/embed_env_secrets.py",);
+			"name" = "Embed .env OpenAI key";
+			"outputFileListPaths" = ();
+			"outputPaths" = ("$(SRCROOT)/Talkbot/Generated/BundledSecrets.swift",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+			"shellPath" = "/bin/sh";
+			"shellScript" = "python3 \"${SRCROOT}/scripts/embed_env_secrets.py\"\n";
 		};
 		"877A6BA951A2EA0025A2ABE8" = {
 			"isa" = "XCBuildConfiguration";
@@ -229,8 +363,10 @@
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"CLANG_ENABLE_MODULES" = "YES";
 				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"CLANG_CXX_LANGUAGE_STANDARD" = "gnu++17";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
+				"DEVELOPMENT_TEAM" = "ZAQK54P5DT";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf";
@@ -246,8 +382,10 @@
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"CLANG_ENABLE_MODULES" = "YES";
 				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"CLANG_CXX_LANGUAGE_STANDARD" = "gnu++17";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
+				"DEVELOPMENT_TEAM" = "ZAQK54P5DT";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
@@ -269,14 +407,19 @@
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"CLANG_ENABLE_MODULES" = "YES";
 				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"CLANG_CXX_LANGUAGE_STANDARD" = "gnu++17";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "org.talkbot.companion";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
 				"INFOPLIST_FILE" = "Talkbot/Info.plist";
 				"GENERATE_INFOPLIST_FILE" = "NO";
-				"MARKETING_VERSION" = "0.2.0";
+				"MARKETING_VERSION" = "0.3.1";
 				"CURRENT_PROJECT_VERSION" = "1";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
-				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTED_PLATFORMS" = "iphoneos";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"ENABLE_DEBUG_DYLIB" = "NO";
+				"FRAMEWORK_SEARCH_PATHS" = "$(inherited) $(PROJECT_DIR)/Vendor";
+				"OTHER_LDFLAGS" = "$(inherited) -lc++";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf";
@@ -292,14 +435,19 @@
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"CLANG_ENABLE_MODULES" = "YES";
 				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"CLANG_CXX_LANGUAGE_STANDARD" = "gnu++17";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "org.talkbot.companion";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
 				"INFOPLIST_FILE" = "Talkbot/Info.plist";
 				"GENERATE_INFOPLIST_FILE" = "NO";
-				"MARKETING_VERSION" = "0.2.0";
+				"MARKETING_VERSION" = "0.3.1";
 				"CURRENT_PROJECT_VERSION" = "1";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
-				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTED_PLATFORMS" = "iphoneos";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"ENABLE_DEBUG_DYLIB" = "NO";
+				"FRAMEWORK_SEARCH_PATHS" = "$(inherited) $(PROJECT_DIR)/Vendor";
+				"OTHER_LDFLAGS" = "$(inherited) -lc++";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
@@ -321,12 +469,15 @@
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"CLANG_ENABLE_MODULES" = "YES";
 				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"CLANG_CXX_LANGUAGE_STANDARD" = "gnu++17";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "org.talkbot.core";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
 				"DEFINES_MODULE" = "YES";
 				"GENERATE_INFOPLIST_FILE" = "YES";
 				"SKIP_INSTALL" = "YES";
 				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"DYLIB_INSTALL_NAME_BASE" = "@rpath";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf";
@@ -342,12 +493,15 @@
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"CLANG_ENABLE_MODULES" = "YES";
 				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"CLANG_CXX_LANGUAGE_STANDARD" = "gnu++17";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "org.talkbot.core";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
 				"DEFINES_MODULE" = "YES";
 				"GENERATE_INFOPLIST_FILE" = "YES";
 				"SKIP_INSTALL" = "YES";
 				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"DYLIB_INSTALL_NAME_BASE" = "@rpath";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
@@ -386,7 +540,7 @@
 		"29C7B681C8D62CBAC94D51C0" = {
 			"isa" = "PBXNativeTarget";
 			"buildConfigurationList" = "9EA62D25DFD1EFBA21F6DE7B";
-			"buildPhases" = ("3BE5C704148406E58FE0AB5F", "5B9773D84493B3D713DB9AC0", "C02F1309AF4906C92F1EAD44", "F0AB04EE052351C80F3286E9",);
+			"buildPhases" = ("6F910460749225298A52C366", "3BE5C704148406E58FE0AB5F", "5B9773D84493B3D713DB9AC0", "C02F1309AF4906C92F1EAD44", "F0AB04EE052351C80F3286E9",);
 			"buildRules" = ();
 			"dependencies" = ("51B401C470CD096FAC2F4CC6",);
 			"name" = "Talkbot";

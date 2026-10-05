@@ -5,9 +5,12 @@ final class TalkbotCoreTests: XCTestCase {
     func testEnglishEllipsisPreservesActivity() {
         var state = ConversationState()
         state.hear("영어놀이 하자")
-        state.hear("강아지는?")
+        let plan = state.hear("강아지는?")
         XCTAssertEqual(state.activity, .english)
-        XCTAssertEqual(state.topic, "강아지는?")
+        XCTAssertEqual(state.topic, "강아지")
+        XCTAssertEqual(plan.beat, .quizWord)
+        XCTAssertFalse(plan.allowQuestion)
+        XCTAssertTrue(plan.systemPrompt.contains("영어 단어만"))
     }
     func testHintProgressionDoesNotChangeActivity() {
         var state = ConversationState()
@@ -36,6 +39,51 @@ final class TalkbotCoreTests: XCTestCase {
         state.hear("동화 들려줘"); state.hear("무서워")
         XCTAssertEqual(state.activity, .story)
         XCTAssertEqual(state.expression, .comforting)
+    }
+    func testSafetySkipsModelAndReturnsHome() {
+        var state = ConversationState()
+        state.hear("영어놀이 하자")
+        let plan = state.hear("우리 집 주소가 뭐야")
+        XCTAssertEqual(state.activity, .free)
+        XCTAssertEqual(plan.intent, .safety)
+        XCTAssertEqual(plan.canned, "그건 디노랑 안 놀아. 다른 거 하자.")
+        XCTAssertTrue(plan.skipLLM)
+    }
+    func testLockedEnglishIgnoresWeakMealWord() {
+        var state = ConversationState()
+        state.hear("영어 공부하자")
+        state.hear("과자")
+        XCTAssertEqual(state.activity, .english)
+    }
+    func testMealKeepsPickyEating() {
+        var state = ConversationState()
+        state.hear("배고파")
+        let plan = state.hear("브로콜리 싫어")
+        XCTAssertEqual(state.activity, .meal)
+        XCTAssertEqual(plan.beat, .follow)
+        XCTAssertNotEqual(plan.intent, .reject)
+    }
+    func testYesAcceptsOfferWithoutLeaving() {
+        var snap = TurnRouter.Snapshot(activity: .counting, expect: .yn, phase: .offer)
+        let plan = TurnRouter.decide(state: &snap, raw: "응", age: .earlySchool)
+        XCTAssertEqual(plan.intent, .answer)
+        XCTAssertEqual(snap.activity, .counting)
+        XCTAssertEqual(snap.phase, .play)
+    }
+    func testPromptStaysCompactAndCarriesTurnCard() {
+        var state = ConversationState()
+        let start = state.hear("영어놀이 하자", age: .preschool)
+        XCTAssertLessThan(start.systemPrompt.count, 420)
+        XCTAssertTrue(start.userPrompt.contains("아이: 영어놀이 하자"))
+        let quiz = state.hear("강아지는?")
+        XCTAssertTrue(quiz.systemPrompt.contains("이번 턴 질문 금지"))
+        XCTAssertTrue(quiz.userPrompt.contains("quizWord"))
+    }
+    func testRepeatedGarbleUsesCannedListenLine() {
+        var state = ConversationState()
+        XCTAssertNil(state.hear("zzzz").canned)
+        let second = state.hear("zzzz")
+        XCTAssertEqual(second.canned, "응, 디노 듣고 있어.")
     }
     func testResponseGateRejectsStaleAudioAfterInterruption() {
         var gate = ResponseGate()
@@ -105,12 +153,53 @@ final class TalkbotCoreTests: XCTestCase {
     func testLostFaceRecentersRatherThanFollowingStalePosition() {
         var gaze = GazeFilter()
         gaze.update(x: 0.7, y: 0.2, eyeContact: true, now: 10)
-        gaze.tick(now: 10.5)
+        gaze.tick(now: 10.6)
         XCTAssertTrue(gaze.hasFace)
-        gaze.tick(now: 10.8)
+        gaze.tick(now: 10.71)
         XCTAssertFalse(gaze.hasFace)
         XCTAssertFalse(gaze.lookingAtScreen)
+        XCTAssertTrue(gaze.eyesOpen)
         XCTAssertEqual(gaze.point, .center)
+    }
+    func testGazeUsesPupilOffsetInsideTheFace() {
+        let ahead = GazeGeometry.fromLandmarks(face: (0.5, 0.5, 0.3, 0.4), pupil: (0.5, 0.5))
+        XCTAssertEqual(ahead.x, 0, accuracy: 0.001)
+        XCTAssertEqual(ahead.y, 0, accuracy: 0.001)
+        let right = GazeGeometry.fromLandmarks(face: (0.5, 0.5, 0.3, 0.4), pupil: (0.62, 0.5))
+        XCTAssertGreaterThan(right.x, 0.3)
+        XCTAssertFalse(GazeGeometry.eyesOpen(leftSpan: 0.01, rightSpan: 0.01))
+        XCTAssertTrue(GazeGeometry.lookingAtScreen(point: .center, eyesOpen: true, faceWidth: 0.2))
+    }
+    func testIrisOffsetUsesEyeSocketNotWholeFace() {
+        let look = GazeGeometry.irisOffset(pupil: (0.62, 0.55), eye: (midX: 0.5, midY: 0.5, width: 0.2, height: 0.1))
+        XCTAssertGreaterThan(look.x, 0.9)
+        XCTAssertGreaterThan(look.y, 0.9)
+    }
+    func testGazeYFollowsUpwardFaceAndIris() {
+        let high = GazeGeometry.headPoint(midX: 0.5, midY: 0.7)
+        XCTAssertGreaterThan(high.y, 0.3)
+        let combined = GazeGeometry.combine(head: GazePoint(x: 0.4, y: 0), look: GazePoint(x: 0.2, y: 0.5))
+        XCTAssertGreaterThan(combined.x, 0.3)
+        XCTAssertLessThan(combined.x, 0.5)
+        XCTAssertGreaterThan(combined.y, 0.2)
+    }
+    func testARFaceMirrorsLookTowardScreenRightAsNegativeX() {
+        let gaze = GazeGeometry.fromARFace(
+            faceX: 0, faceY: 0,
+            lookOutLeft: 0, lookInLeft: 1,
+            lookOutRight: 1, lookInRight: 0,
+            lookUpLeft: 0, lookDownLeft: 0,
+            lookUpRight: 0, lookDownRight: 0)
+        XCTAssertLessThan(gaze.x, -0.3)
+    }
+    func testBlinkHoldsLastGazeInsteadOfJumping() {
+        var gaze = GazeFilter()
+        gaze.update(x: 0.6, y: -0.2, eyeContact: false, now: 10, eyesOpen: true)
+        let held = gaze.point
+        gaze.update(x: 0, y: 0, eyeContact: false, now: 10.05, eyesOpen: false)
+        XCTAssertFalse(gaze.eyesOpen)
+        XCTAssertEqual(gaze.point.x, held.x, accuracy: 0.0001)
+        XCTAssertEqual(gaze.point.y, held.y, accuracy: 0.0001)
     }
     func testGAEventDecodingAudioAndDone() throws {
         let audio = try JSONDecoder().decode(ServerEvent.self, from: Data("""
